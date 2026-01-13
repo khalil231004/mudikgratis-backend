@@ -14,10 +14,8 @@ import java.io.ByteArrayOutputStream;
 @ApplicationScoped
 public class TiketService {
 
-    // Fungsi Utama: Menerima Data Pendaftar -> Mengeluarkan PDF (byte[])
     public byte[] cetakTiket(PendaftaranMudik pendaftar) throws Exception {
 
-        // 1. Siapkan Kertas PDF
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         Document document = new Document(PageSize.A4);
         PdfWriter.getInstance(document, out);

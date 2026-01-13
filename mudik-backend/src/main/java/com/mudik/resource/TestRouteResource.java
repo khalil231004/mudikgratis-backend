@@ -20,18 +20,15 @@ public class TestRouteResource {
 
     @GET
     @Path("/{idAsal}/{idTujuan}")
-    @Blocking  // <--- 2. TAMBAH INI (JURUS PENYELAMAT)
+    @Blocking
     public Uni<Response> testHitungRute(@PathParam("idAsal") Long idAsal, @PathParam("idTujuan") Long idTujuan) {
 
-        // Database Call (Ini yang bikin error tadi karena dia Blocking)
         Terminal asal = Terminal.findById(idAsal);
         Terminal tujuan = Terminal.findById(idTujuan);
 
         if (asal == null || tujuan == null) {
             return Uni.createFrom().item(Response.status(404).entity("Terminal tidak ditemukan!").build());
         }
-
-        // Logic OSRM lanjut di sini...
         String coordinates = asal.longitude + "," + asal.latitude + ";" +
                 tujuan.longitude + "," + tujuan.latitude;
 

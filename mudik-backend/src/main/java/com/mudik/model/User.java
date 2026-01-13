@@ -16,12 +16,12 @@ public class User extends PanacheEntityBase {
     public String password_hash;
     public String nama_lengkap;
     public String nik; // NIK Kepala Keluarga
+    public String no_hp;
     public String status_akun; // AKTIF, BLOKIR
     public String verification_token; // Nyimpen kode rahasia UUID
 
     public LocalDateTime created_at;
 
-    // Helper untuk cari user by Email
     public static User findByEmail(String email) {
         return find("email", email).firstResult();
     }

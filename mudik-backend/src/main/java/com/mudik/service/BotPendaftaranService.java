@@ -3,6 +3,7 @@ package com.mudik.service;
 import com.mudik.model.*;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.transaction.Transactional;
+
 import java.time.LocalDateTime;
 
 @ApplicationScoped
@@ -17,12 +18,9 @@ public class BotPendaftaranService {
             String namaPesertaInput,
             String pathKtp,
             String pathKk,
-            String pathBarang, // <-- Ini yang baru
-            String hubungan    // <-- JANGAN LUPA INI (Penyebab Error kamu)
+            String pathBarang,
+            String hubungan
     ) {
-        // ... isi kodingan ke bawah aman ...{
-
-        // 1. VALIDASI DASAR
         User user = User.findById(userId);
         Rute rute = Rute.findById(routeId);
 

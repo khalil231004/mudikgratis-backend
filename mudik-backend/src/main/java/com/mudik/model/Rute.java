@@ -14,9 +14,6 @@ public class Rute extends PanacheEntityBase {
     public Long route_id;
     public String asal;
     public String tujuan;
-
-    // INI YANG KURANG TADI:
-    // Tambahkan field ini supaya 'rute.kuota_tersisa' tidak merah lagi
     public int kuota_tersisa;
 
 

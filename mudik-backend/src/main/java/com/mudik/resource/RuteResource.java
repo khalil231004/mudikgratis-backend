@@ -19,12 +19,9 @@ public class RuteResource {
     public Response getAllRute() {
         // Ambil data dari database
         List<Rute> listRute = Rute.listAll();
-
-        // Mapping data: HANYA KIRIM NAMA & ID
-        // Kita HAPUS logika cek kuota. Frontend tidak akan tahu rute itu penuh atau kosong.
         List<Map<String, Object>> hasil = listRute.stream().map(r -> {
             Map<String, Object> map = new HashMap<>();
-            map.put("route_id", r.route_id); // Penting buat dikirim balik saat daftar
+            map.put("route_id", r.route_id);
             map.put("asal", r.asal);
             map.put("tujuan", r.tujuan);
 

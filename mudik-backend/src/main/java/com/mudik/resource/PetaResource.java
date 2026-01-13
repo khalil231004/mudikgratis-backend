@@ -14,7 +14,7 @@ import java.util.List;
 @Path("/api/peta")
 public class PetaResource {
 
-    // Struktur JSON untuk Frontend
+
     public static class InfoRute {
         public String kota_asal;
         public Double asal_lat;
@@ -24,7 +24,7 @@ public class PetaResource {
         public Double tujuan_lat;
         public Double tujuan_lon;
 
-        public Long jumlah_pemudik; // Pakai Long karena hasil count database
+        public Long jumlah_pemudik;
     }
 
     @GET
@@ -37,47 +37,35 @@ public class PetaResource {
         List<Rute> semuaRute = Rute.listAll();
 
         for (Rute r : semuaRute) {
-            // 1. HITUNG JUMLAH PEMUDIK (Support DITERIMA & APPROVED)
-            // Kita hitung langsung dari database biar cepat
             long jumlah = PendaftaranMudik.count(
                     "rute = ?1 AND (status_pendaftaran = 'APPROVED' OR status_pendaftaran = 'DITERIMA')",
                     r
             );
-
-            // Kalau ada penumpangnya, baru kita proses koordinatnya
             if (jumlah > 0) {
-                // Cari data Terminal Tujuan & Asal
-                // (Pakai logic find first biar aman)
                 Terminal tTujuan = Terminal.find("nama = ?1 OR kota = ?1", r.tujuan).firstResult();
                 Terminal tAsal = Terminal.find("nama = ?1 OR kota = ?1", r.asal).firstResult();
 
-                // Cek flag Banda Aceh
+
                 boolean asalIsBandaAceh = (r.asal != null && r.asal.equalsIgnoreCase("Banda Aceh"));
 
-                // Validasi data terminal ada
+
                 if (tTujuan != null && (tAsal != null || asalIsBandaAceh)) {
                     InfoRute info = new InfoRute();
 
-                    // --- LOGIC SPESIAL BATOH ---
+
                     if (asalIsBandaAceh) {
                         info.kota_asal = "Terminal Batoh";
-                        // Koordinat Pas di Jalan Raya (Bypass)
                         info.asal_lat = 5.529939135839976;
                         info.asal_lon = 95.32882703823104;
                     } else {
-                        // Kota Lain (Normal)
                         info.kota_asal = r.asal;
                         info.asal_lat = tAsal.latitude;
                         info.asal_lon = tAsal.longitude;
                     }
-
-                    // Info Tujuan
                     info.kota_tujuan = r.tujuan;
                     info.tujuan_lat = tTujuan.latitude;
                     info.tujuan_lon = tTujuan.longitude;
-
                     info.jumlah_pemudik = jumlah;
-
                     hasilAkhir.add(info);
                 }
             }

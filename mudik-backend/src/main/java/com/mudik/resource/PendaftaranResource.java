@@ -46,7 +46,7 @@ public class PendaftaranResource {
             String pathKk = simpanFile(fileKk, "KK-" + nikPeserta);
 
             // Simpan Foto Barang (Kalau user upload)
-            String pathBarang = null;
+            String pathBarang;
             if (fileBarang != null && fileBarang.fileName() != null) {
                 pathBarang = simpanFile(fileBarang, "BARANG-" + nikPeserta);
             } else {
@@ -75,7 +75,8 @@ public class PendaftaranResource {
     }
 
     private String simpanFile(FileUpload fileUpload, String prefixName) throws IOException {
-        if (fileUpload == null || fileUpload.fileName() == null) throw new IllegalArgumentException("File wajib diupload!");
+        if (fileUpload == null || fileUpload.fileName() == null)
+            throw new IllegalArgumentException("File wajib diupload!");
 
         File folder = new File(UPLOAD_DIR);
         if (!folder.exists()) folder.mkdirs();

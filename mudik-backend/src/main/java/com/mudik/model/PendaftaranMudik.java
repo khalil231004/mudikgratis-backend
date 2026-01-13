@@ -2,6 +2,7 @@ package com.mudik.model;
 
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import jakarta.persistence.*;
+
 import java.time.LocalDateTime;
 
 @Entity

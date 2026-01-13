@@ -12,11 +12,7 @@ import jakarta.ws.rs.core.Response;
 import io.smallrye.jwt.build.Jwt;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
-import java.util.HashSet;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
@@ -32,11 +28,11 @@ public class AuthResource {
     @Inject
     Mailer mailer;
 
-    // --- RAHASIA: Ambil Secret Key dari application.properties / .env ---
+
     @ConfigProperty(name = "smallrye.jwt.sign.key")
     String jwtSecret;
 
-    // --- DINAMIS: Ambil URL Server dari config (Gak pake IP WiFi hardcode lagi) ---
+
     @ConfigProperty(name = "app.base.url", defaultValue = "http://localhost:8080")
     String baseUrl;
 
@@ -68,7 +64,6 @@ public class AuthResource {
             userBaru.status_akun = "BELUM_VERIF";
             userBaru.persist();
 
-            // PAKAI BASE URL DARI CONFIG (Bisa berubah otomatis sesuai server)
             String link = baseUrl + "/api/auth/verify?token=" + token;
 
             String bodyEmail = "<h1>Halo, " + userBaru.nama_lengkap + "!</h1>"
@@ -120,9 +115,9 @@ public class AuthResource {
                     "HmacSHA256"
             );
 
-            String token = Jwt.issuer(baseUrl) // Issuer pake baseUrl biar sinkron
+            String token = Jwt.issuer(baseUrl)
                     .upn(user.email)
-                    .groups(new HashSet<>(Arrays.asList("USER")))
+                    .groups(new HashSet<>(List.of("USER")))
                     .claim("id_user", user.user_id) // Pastikan field-nya bener (id atau user_id)
                     .claim("nama", user.nama_lengkap)
                     .expiresIn(3600)
