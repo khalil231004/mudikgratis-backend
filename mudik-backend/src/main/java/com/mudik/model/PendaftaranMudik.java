@@ -23,14 +23,10 @@ public class PendaftaranMudik extends PanacheEntityBase {
     public String nik_peserta;
     public String nama_peserta;
     public String hubungan_keluarga;
-
     public String foto_ktp_path;
     public String foto_kk_path;
-
-    // --- TAMBAHAN BARU (FOTO BARANG & TOKEN) ---
-    public String foto_barang_path;   // Buat Foto Koper/Tas
-    public String kode_token_barang;  // Buat Stiker di Dishub (TIKET-5-101)
-
+    public String foto_barang_path;
+    public String kode_token_barang;
     public String status_pendaftaran;
     public String bot_flag;
     public LocalDateTime created_at;

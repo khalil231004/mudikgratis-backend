@@ -12,21 +12,18 @@ public class CorsFilter implements ContainerResponseFilter {
     public void filter(ContainerRequestContext requestContext,
                        ContainerResponseContext responseContext) throws IOException {
 
-        // 1. GANTI IP SPESIFIK JADI BINTANG (*)
-        // Artinya: Siapapun yg connect ke WiFi ini boleh akses (Dymas, HP, dll)
-        responseContext.getHeaders().add(
-                "Access-Control-Allow-Origin", "*");
+        // Ambil origin dari request secara dinamis (Trik biar tetap fleksibel tapi gak error)
+        String origin = requestContext.getHeaderString("Origin");
+        if (origin != null) {
+            responseContext.getHeaders().add("Access-Control-Allow-Origin", origin);
+        }
 
-        // 2. Izinkan Method Lengkap
-        responseContext.getHeaders().add(
-                "Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, HEAD");
+        responseContext.getHeaders().add("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, HEAD");
 
-        // 3. TAMBAHKAN 'userId' dan 'Authorization' KE SINI (PENTING!)
-        // Kalau gak ditambahin, header 'userId' yang dikirim Dymas bakal ditolak
-        responseContext.getHeaders().add(
-                "Access-Control-Allow-Headers", "content-type, origin, accept, authorization, userId");
+        // Pastikan 'userId' ada di sini agar tidak kena 403 saat kirim header custom
+        responseContext.getHeaders().add("Access-Control-Allow-Headers", "content-type, origin, accept, authorization, userId");
 
-        responseContext.getHeaders().add(
-                "Access-Control-Allow-Credentials", "true");
+        // Izinkan credentials agar login tetap jalan
+        responseContext.getHeaders().add("Access-Control-Allow-Credentials", "true");
     }
 }
