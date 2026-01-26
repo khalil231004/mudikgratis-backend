@@ -17,11 +17,10 @@ public class RuteResource {
 
     @GET
     public Response getAllRute() {
-        // Ambil data dari database
         List<Rute> listRute = Rute.listAll();
         List<Map<String, Object>> hasil = listRute.stream().map(r -> {
             Map<String, Object> map = new HashMap<>();
-            map.put("route_id", r.route_id);
+            map.put("rute_id", r.rute_id);
             map.put("asal", r.asal);
             map.put("tujuan", r.tujuan);
 

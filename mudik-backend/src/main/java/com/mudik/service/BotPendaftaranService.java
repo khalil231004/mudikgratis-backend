@@ -1,79 +1,107 @@
 package com.mudik.service;
 
 import com.mudik.model.*;
+import io.quarkus.mailer.Mailer;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
-
-import java.time.LocalDateTime;
+import java.time.LocalDate;
+import java.time.Period;
+import java.util.List;
+import java.util.UUID;
 
 @ApplicationScoped
 public class BotPendaftaranService {
 
+    @Inject
+    Mailer mailer;
+
     @Transactional
-    // Pastikan baris ini persis seperti di bawah:
-    public PendaftaranMudik prosesPendaftaran(
-            Long userId,
-            Long routeId,
-            String nikPesertaInput,
-            String namaPesertaInput,
-            String pathKtp,
-            String pathKk,
-            String pathBarang,
-            String hubungan
+    public void prosesPendaftaranBatch(
+            Long userId, Long ruteId,
+            List<String> listNama, List<String> listNik, List<String> listGender,
+            List<String> listTglLahir, List<String> listIdentitas,
+            List<String> listPathBukti,
+            List<Double> listBerat, List<String> listUkuran,
+            List<String> titik_jemput,
+            List<String> listNoHp
     ) {
+        // 1. Validasi Awal
         User user = User.findById(userId);
-        Rute rute = Rute.findById(routeId);
+        if (user == null) throw new IllegalArgumentException("User ID tidak ditemukan!");
 
-        if (user == null) throw new IllegalArgumentException("User tidak ditemukan.");
-        if (rute == null) throw new IllegalArgumentException("Rute tidak ditemukan.");
+        Rute rute = Rute.findById(ruteId);
+        if (rute == null) throw new IllegalArgumentException("Rute tidak ditemukan!");
 
-        if (!nikPesertaInput.matches("\\d+") || nikPesertaInput.length() != 16) {
-            throw new IllegalArgumentException("NIK harus 16 digit angka!");
+        // --- 🛡️ VALIDASI JUMLAH DATA (WAJIB SAMA SEMUA) ---
+        int jumlah = listNama.size();
+        if (listNik.size() != jumlah || listGender.size() != jumlah || listPathBukti.size() != jumlah) {
+            throw new IllegalArgumentException("Data tidak konsisten! Pastikan semua kolom terisi untuk " + jumlah + " peserta.");
         }
 
-        if (namaPesertaInput == null || namaPesertaInput.trim().isEmpty()) {
-            throw new IllegalArgumentException("Nama Peserta wajib diisi!");
+        // 2. CEK LIMIT AKUN
+        long sudahDaftar = PendaftaranMudik.count("user.user_id", userId);
+        if ((sudahDaftar + jumlah) > 5) {
+            throw new IllegalArgumentException("Gagal! Sisa kuota akun Anda hanya: " + (5 - sudahDaftar));
         }
 
-        // 2. CEK DUPLIKASI
-        long cekNik = PendaftaranMudik.count("nik_peserta = ?1 AND (status_pendaftaran = 'MENUNGGU_VERIFIKASI' OR status_pendaftaran = 'DITERIMA')", nikPesertaInput);
-        if (cekNik > 0) throw new IllegalArgumentException("NIK " + nikPesertaInput + " sudah terdaftar!");
+        // 3. LOOPING
+        int kursiDibutuhkan = 0;
 
-        long cekKtp = PendaftaranMudik.count("foto_ktp_path = ?1", pathKtp);
-        if (cekKtp > 0) throw new IllegalArgumentException("Foto KTP ini sudah digunakan!");
+        for (int i = 0; i < jumlah; i++) {
+            String nik = listNik.get(i);
 
+            // Cek NIK
+            if (PendaftaranMudik.count("nik_peserta", nik) > 0) {
+                throw new IllegalArgumentException("NIK " + nik + " sudah terdaftar!");
+            }
 
-        // 4. SIMPAN DATA
-        PendaftaranMudik p = new PendaftaranMudik();
-        p.user = user;
-        p.rute = rute;
-        p.nik_peserta = nikPesertaInput;
-        p.nama_peserta = namaPesertaInput.toUpperCase();
-        p.hubungan_keluarga = (hubungan != null && !hubungan.isEmpty()) ? hubungan : "DIRI SENDIRI";
+            // Hitung Umur
+            LocalDate tglLahir = LocalDate.parse(listTglLahir.get(i));
+            int umur = Period.between(tglLahir, LocalDate.now()).getYears();
+            String kategori = (umur < 2) ? "BAYI" : (umur < 5) ? "ANAK" : "DEWASA";
 
-        p.foto_ktp_path = pathKtp;
-        p.foto_kk_path = pathKk;
-        p.foto_barang_path = pathBarang; // Simpan Path Barang
+            if (!kategori.equals("BAYI")) kursiDibutuhkan++;
 
-        p.status_pendaftaran = "MENUNGGU_VERIFIKASI";
-        p.bot_flag = "AMAN";
-        p.created_at = LocalDateTime.now();
+            // Simpan
+            PendaftaranMudik p = new PendaftaranMudik();
+            p.user = user;
+            p.rute = rute;
+            p.nama_peserta = listNama.get(i).toUpperCase();
+            p.nik_peserta = nik;
+            p.jenis_kelamin = listGender.get(i);
+            p.tanggal_lahir = tglLahir;
+            p.kategori_penumpang = kategori;
 
-        // PENTING: Simpan dulu biar dapet ID
-        p.persist();
+            p.jenis_identitas = listIdentitas.get(i);
+            p.foto_identitas_path = listPathBukti.get(i); // Ini aman karena udah divalidasi size-nya di Resource
 
-        String rawTujuan = rute.tujuan.toUpperCase().replaceAll("[^A-Z]", "");
+            p.berat_barang = listBerat.get(i);
+            p.ukuran_barang = listUkuran.get(i);
+            p.titik_jemput = titik_jemput.get(i);
 
-        // 2. Ambil 3 Huruf Pertama sebagai Kode
-        // Kalau nama kotanya pende{
-        //  "error": "SRJWT05009: "
-        //}k (misal: "Ie"), ambil semuanya.
-        String kodeKota = (rawTujuan.length() >= 3) ? rawTujuan.substring(0, 3) : rawTujuan;
+            // --- 🔥 FIX LOGIC NO HP ---
+            // Kita paksa ambil index i. Kalau frontend gak ngirim string kosong, salah mereka.
+            // Tapi kita jagain biar gak crash index out of bounds.
+            if (listNoHp != null && listNoHp.size() == jumlah) {
+                String hp = listNoHp.get(i);
+                // Cuma simpan kalau isinya angka valid (bukan string kosong)
+                if (hp != null && hp.length() > 5) {
+                    p.no_hp_peserta = hp;
+                }
+            }
+            // Kalau listNoHp ukurannya beda sama jumlah peserta, kita abaikan semua no hp (daripada ketuker)
 
-        // 3. Gabungkan Jadi Token
-        // Format: [KODE_KOTA]-[ID_RUTE]-[ID_PENDAFTARAN]
-        // Contoh: SIG-5-101 atau BAN-1-205
-        p.kode_token_barang = kodeKota + "-" + routeId + "-" + p.pendaftaran_id;
-        return p;
+            p.status_pendaftaran = "MENUNGGU_VERIFIKASI";
+            p.kode_booking = "MDK-" + ruteId + "-" + UUID.randomUUID().toString().substring(0,6).toUpperCase();
+
+            p.persist();
+        }
+
+        // 4. CEK KUOTA BUS
+        if (rute.kuota_tersisa < kursiDibutuhkan) {
+            throw new IllegalArgumentException("Kuota Bus Habis! Sisa: " + rute.kuota_tersisa);
+        }
+        rute.kuota_tersisa -= kursiDibutuhkan;
     }
 }

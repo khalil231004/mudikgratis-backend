@@ -1,43 +1,52 @@
 package com.mudik.service;
 
 import com.mudik.model.User;
+import io.quarkus.elytron.security.common.BcryptUtil; // <--- WAJIB IMPORT INI
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.transaction.Transactional;
-
 import java.time.LocalDateTime;
 
 @ApplicationScoped
 public class AuthService {
 
     @Transactional
-    public User registerUser(String nama, String email, String password, String nik, String nohp) {
-        User cekEmail = User.find("email", email).firstResult();
-        if (cekEmail != null) {
+    public User registerUser(String nama, String email, String password, String nik, String nohp, String jenisKelamin) {
+
+        // 1. Cek Email Kembar
+        if (User.find("email", email).firstResult() != null) {
             throw new IllegalArgumentException("Email sudah terdaftar!");
         }
+
+        // 2. Cek NIK Kembar (Biar data valid)
+        if (User.find("nik", nik).firstResult() != null) {
+            throw new IllegalArgumentException("NIK sudah digunakan!");
+        }
+
         User newUser = new User();
         newUser.nama_lengkap = nama;
         newUser.email = email;
-        newUser.password_hash = password;
+        newUser.password_hash = BcryptUtil.bcryptHash(password);
+
         newUser.nik = nik;
         newUser.no_hp = nohp;
-        newUser.status_akun = "AKTIF";
-        newUser.created_at = LocalDateTime.now();
+        newUser.jenis_kelamin = jenisKelamin;
 
+        newUser.role = "USER";
+        newUser.status_akun = "BELUM_VERIF";
         newUser.persist();
-
         return newUser;
     }
 
-    public User loginUser(String email, String password) {
+    public User loginUser(String email, String passwordInput) {
         User user = User.find("email", email).firstResult();
 
         if (user == null) {
-            throw new IllegalArgumentException("Email tidak ditemukan!");
+            throw new IllegalArgumentException("Email atau Password salah!");
         }
-        if (!user.password_hash.equals(password)) {
-            throw new IllegalArgumentException("Password salah!");
+        if (!BcryptUtil.matches(passwordInput, user.password_hash)) {
+            throw new IllegalArgumentException("Email atau Password salah!");
         }
+
         return user;
     }
 }

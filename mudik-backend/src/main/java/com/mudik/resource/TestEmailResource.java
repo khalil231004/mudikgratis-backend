@@ -21,7 +21,7 @@ public class TestEmailResource {
         String MY_EMAIL = "khalilgaming64@gmail.com";
         String MY_PASSWORD = "ootbzfxxslqqdwlz";
         try {
-            mailer.send(Mail.withText(MY_EMAIL, "Tes Hardcore", "Kalau ini masuk, berarti password benar!"));
+            mailer.send(Mail.withText(MY_EMAIL, "Tes Email", "Kalau ini masuk, berarti password benar!"));
             return "✅ PERINTAH KIRIM SUKSES! Cek Inbox.";
         } catch (Exception e) {
             return "❌ GAGAL: " + e.getMessage();

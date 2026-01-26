@@ -18,8 +18,10 @@ public class TiketResource {
     public Response downloadTiket(@PathParam("id") Long id) {
 
         PendaftaranMudik pendaftar = PendaftaranMudik.findById(id);
+
+        // Validasi Dasar
         if (pendaftar == null) {
-            return Response.status(404).entity("Data tidak ditemukan").build();
+            return Response.status(404).entity("Data pendaftaran tidak ditemukan").build();
         }
 
         if (!"DITERIMA".equalsIgnoreCase(pendaftar.status_pendaftaran)) {
@@ -28,8 +30,9 @@ public class TiketResource {
 
         try {
             byte[] pdfBytes = tiketService.cetakTiket(pendaftar);
+
             return Response.ok(pdfBytes)
-                    .header("Content-Disposition", "attachment; filename=Tiket_Mudik_" + pendaftar.nama_peserta + ".pdf")
+                    .header("Content-Disposition", "attachment; filename=Tiket_Mudik_" + pendaftar.nama_peserta.replace(" ", "_") + ".pdf")
                     .build();
 
         } catch (Exception e) {

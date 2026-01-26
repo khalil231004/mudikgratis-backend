@@ -33,7 +33,6 @@ public class PetaResource {
     public List<InfoRute> getSebaran() {
         List<InfoRute> hasilAkhir = new ArrayList<>();
 
-        // Ambil semua rute biar kita cek satu-satu
         List<Rute> semuaRute = Rute.listAll();
 
         for (Rute r : semuaRute) {

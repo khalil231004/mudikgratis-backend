@@ -11,10 +11,12 @@ public class Rute extends PanacheEntityBase {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    public Long route_id;
+    public Long rute_id;
     public String asal;
     public String tujuan;
     public int kuota_tersisa;
 
-
+    public static Rute findById(Long id) {
+        return find("rute_id", id).firstResult();
+    }
 }
