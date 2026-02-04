@@ -19,11 +19,9 @@ public class PetaResource {
         public String kota_asal;
         public Double asal_lat;
         public Double asal_lon;
-
         public String kota_tujuan;
         public Double tujuan_lat;
         public Double tujuan_lon;
-
         public Long jumlah_pemudik;
     }
 

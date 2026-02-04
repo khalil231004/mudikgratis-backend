@@ -15,16 +15,13 @@ public class PendaftaranMudik extends PanacheEntityBase {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     public Long pendaftaran_id;
 
-    // --- BAGIAN INI JANGAN DIHAPUS TOTAL, CUKUP SEDERHANAKAN ---
-    // Hapus @JoinColumn dan @NotNull biar IDE gak rewel.
-    // Cukup @ManyToOne, nanti Hibernate otomatis bikin kolom 'user_user_id' atau 'user_id'.
-
     @ManyToOne
     public User user;
 
     @ManyToOne
     public Rute rute;
-    // -----------------------------------------------------------
+
+    // --- DATA PESERTA ---
 
     @NotBlank(message = "Nama Peserta tidak boleh kosong")
     @Size(min = 3, message = "Nama minimal 3 huruf")
@@ -35,8 +32,8 @@ public class PendaftaranMudik extends PanacheEntityBase {
     @Pattern(regexp = "^[0-9]{16}$", message = "NIK harus 16 digit angka")
     public String nik_peserta;
 
-    // HP Boleh Kosong (Sesuai request tadi)
-    @Pattern(regexp = "^08[0-9]{8,13}$", message = "Format HP salah (08...)")
+    // REVISI: Validasi Regex dihapus dulu biar bisa NULL/Kosong
+    // Nanti di Service kita cek: Kalau kosong -> Ambil No HP User Pemilik Akun
     public String no_hp_peserta;
 
     @NotBlank(message = "Jenis Kelamin wajib dipilih")
@@ -47,18 +44,22 @@ public class PendaftaranMudik extends PanacheEntityBase {
     public LocalDate tanggal_lahir;
 
     @NotBlank(message = "Kategori Penumpang wajib diisi")
-    public String kategori_penumpang;
+    public String kategori_penumpang; // Dewasa, Anak, Lansia
 
-    public String jenis_identitas;
+    public String jenis_identitas; // KTP/KIA
     public String foto_identitas_path;
 
-    // Hapus @PositiveOrZero kalau bikin ribet, pake Double biasa aja
-    public Double berat_barang;
+    // REVISI: Berat (Double) DIGANTI jadi Jenis (String)
+    // Hapus public Double berat_barang;
+    public String jenis_barang; // Contoh isi: "Koper Besar", "Tas Ransel", "Kardus"
 
-    public String ukuran_barang;
+    public String ukuran_barang; // Boleh dipertahankan atau dihapus jika dirasa duplikat
+
     public String status_pendaftaran;
     public String kode_booking;
-    public String titik_jemput;
+
+    // REVISI: Sudah benar ada alamat rumah
+    public String alamat_rumah;
 
     @CreationTimestamp
     public LocalDateTime created_at;

@@ -26,59 +26,77 @@ public class TiketService {
 
         document.open();
 
-        // 1. KODE BOOKING
+        // 1. HEADER / JUDUL
         String kodeUnik = (pendaftar.kode_booking != null) ? pendaftar.kode_booking : "MDK-ERR-" + pendaftar.pendaftaran_id;
 
-        // --- HEADER ---
-        Font fontJudul = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 24, Color.BLUE);
+        Font fontJudul = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 22, new Color(0, 51, 102)); // Biru Gelap
         Paragraph judul = new Paragraph("E-TIKET MUDIK GRATIS 2026", fontJudul);
         judul.setAlignment(Element.ALIGN_CENTER);
-        judul.setSpacingAfter(5);
         document.add(judul);
 
-        Font fontSub = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 14, Color.RED);
-        Paragraph sub = new Paragraph("KODE BOOKING: " + kodeUnik, fontSub);
+        Font fontSub = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 16, Color.RED);
+        Paragraph sub = new Paragraph(kodeUnik, fontSub);
         sub.setAlignment(Element.ALIGN_CENTER);
-        sub.setSpacingAfter(15);
+        sub.setSpacingAfter(20);
         document.add(sub);
 
+        // GARIS PEMBATAS
         document.add(new Paragraph("----------------------------------------------------------------------------------------------------------------"));
 
+        // 2. TANGGAL KEBERANGKATAN (HIGHLIGHT PENTING)
+        String tglBerangkat = (pendaftar.rute != null) ? pendaftar.rute.getFormattedDate() : "Jadwal Belum Rilis";
+
+        Font fontPenting = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 14, Color.BLACK);
+        Paragraph pTgl = new Paragraph("TANGGAL KEBERANGKATAN:\n" + tglBerangkat, fontPenting);
+        pTgl.setAlignment(Element.ALIGN_CENTER);
+        pTgl.setSpacingBefore(10);
+        pTgl.setSpacingAfter(10);
+        document.add(pTgl);
+
+        // 3. TABEL DETAIL
         PdfPTable table = new PdfPTable(2);
         table.setWidthPercentage(100);
-        table.setSpacingBefore(20f);
+        table.setSpacingBefore(10f);
         table.setSpacingAfter(20f);
-        table.setWidths(new float[]{1, 2});
+        table.setWidths(new float[]{1.5f, 2.5f}); // Kolom label lebih kecil dikit
 
-        DateTimeFormatter fmt = DateTimeFormatter.ofPattern("dd MMMM yyyy", new Locale("id", "ID"));
-
-        // Isi Data
+        // --- ISI DATA (SESUAI REVISI DB) ---
         addCell(table, "Nama Penumpang", pendaftar.nama_peserta);
         addCell(table, "NIK", pendaftar.nik_peserta);
 
-        String ruteInfo = (pendaftar.rute != null) ? pendaftar.rute.asal + " ➜ " + pendaftar.rute.tujuan : "Data Rute Hilang";
+        // Rute
+        String ruteInfo = (pendaftar.rute != null) ? pendaftar.rute.asal + " ➜ " + pendaftar.rute.tujuan : "-";
         addCell(table, "Rute Perjalanan", ruteInfo);
 
-        addCell(table, "Titik Jemput", pendaftar.titik_jemput); // PENTING: Lokasi jemput
+        // Info Bus & Plat (REVISI PART 1)
+        String busInfo = (pendaftar.rute != null && pendaftar.rute.nama_bus != null)
+                ? pendaftar.rute.nama_bus + " (" + pendaftar.rute.plat_nomor + ")"
+                : "Akan Diinfokan Admin";
+        addCell(table, "Armada / Bus", busInfo);
 
+        // Alamat Rumah (GANTI Titik Jemput)
+        addCell(table, "Alamat Domisili", pendaftar.alamat_rumah);
 
-        String infoBarang = (pendaftar.berat_barang + " Kg") + " / " + pendaftar.ukuran_barang;
+        // Jenis Barang (GANTI Berat)
+        String infoBarang = (pendaftar.jenis_barang != null ? pendaftar.jenis_barang : "Tidak Bawa Barang")
+                + " (" + (pendaftar.ukuran_barang != null ? pendaftar.ukuran_barang : "-") + ")";
         addCell(table, "Barang Bawaan", infoBarang);
-
-        addCell(table, "Status Tiket", pendaftar.status_pendaftaran);
 
         document.add(table);
 
-        // --- QR CODE (PENTING BUAT SCANNER) ---
-        // QR Code isinya JSON String simple biar nanti petugas gampang scan
-        String qrData = "MUDIK|" + kodeUnik + "|" + pendaftar.nik_peserta;
+        // 4. QR CODE (UKURAN DISESUAIKAN)
+        // Data QR: KodeBooking | NIK | Nama
+        String qrData = kodeUnik + ";" + pendaftar.nik_peserta + ";" + pendaftar.nama_peserta;
         Image qrImage = generateQRCodeImage(qrData);
         qrImage.setAlignment(Element.ALIGN_CENTER);
-        qrImage.scalePercent(150f); // Perbesar dikit
+
+        // Skala 120% (Lebih rapi daripada 150%, tidak pecah)
+        qrImage.scalePercent(120f);
         document.add(qrImage);
 
-        // --- FOOTER ---
-        Paragraph footer = new Paragraph("\n*Harap datang 1 jam sebelum keberangkatan.\n*Tunjukkan QR Code ini kepada petugas saat check-in.", FontFactory.getFont(FontFactory.HELVETICA_OBLIQUE, 10));
+        // Footer
+        Paragraph footer = new Paragraph("\n*Simpan tiket ini. Tunjukkan QR Code pada petugas saat keberangkatan.",
+                FontFactory.getFont(FontFactory.HELVETICA_OBLIQUE, 10));
         footer.setAlignment(Element.ALIGN_CENTER);
         document.add(footer);
 
@@ -89,19 +107,20 @@ public class TiketService {
     private void addCell(PdfPTable table, String header, String value) {
         Font fontHeader = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 12, Color.DARK_GRAY);
         PdfPCell cellHeader = new PdfPCell(new Paragraph(header, fontHeader));
-        cellHeader.setBackgroundColor(new Color(230, 230, 230)); // Abu muda
-        cellHeader.setPadding(8);
-        cellHeader.setBorderColor(Color.GRAY);
+        cellHeader.setBackgroundColor(new Color(240, 240, 240));
+        cellHeader.setPadding(6);
+        cellHeader.setBorderColor(Color.LIGHT_GRAY);
         table.addCell(cellHeader);
 
         PdfPCell cellValue = new PdfPCell(new Paragraph(value != null ? value : "-", FontFactory.getFont(FontFactory.HELVETICA, 12)));
-        cellValue.setPadding(8);
-        cellValue.setBorderColor(Color.GRAY);
+        cellValue.setPadding(6);
+        cellValue.setBorderColor(Color.LIGHT_GRAY);
         table.addCell(cellValue);
     }
 
     private Image generateQRCodeImage(String text) throws Exception {
         QRCodeWriter barcodeWriter = new QRCodeWriter();
+        // Ukuran pixel QR asli (300x300 cukup tajam)
         BitMatrix bitMatrix = barcodeWriter.encode(text, BarcodeFormat.QR_CODE, 300, 300);
         ByteArrayOutputStream pngOutputStream = new ByteArrayOutputStream();
         MatrixToImageWriter.writeToStream(bitMatrix, "PNG", pngOutputStream);

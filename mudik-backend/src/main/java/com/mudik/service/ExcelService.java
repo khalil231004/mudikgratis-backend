@@ -3,9 +3,9 @@ package com.mudik.service;
 import com.mudik.model.PendaftaranMudik;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.apache.poi.ss.usermodel.*;
-import org.apache.poi.ss.util.CellRangeAddress;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
-
+// ... imports tetap sama ...
+import java.time.format.DateTimeFormatter;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.List;
@@ -18,27 +18,20 @@ public class ExcelService {
     public byte[] generateLaporanExcel(List<PendaftaranMudik> dataList) throws IOException {
         try (Workbook workbook = new XSSFWorkbook()) {
 
-            // 1. KELOMPOKKAN DATA BERDASARKAN RUTE
-            // Hasilnya: Map<"Medan", List<Penumpang>>
             Map<String, List<PendaftaranMudik>> dataPerRute = dataList.stream()
                     .collect(Collectors.groupingBy(p -> (p.rute != null ? p.rute.tujuan : "Tanpa Rute")));
 
-            // 2. BIKIN SHEET UNTUK SETIAP RUTE
             for (Map.Entry<String, List<PendaftaranMudik>> entry : dataPerRute.entrySet()) {
                 String namaRute = entry.getKey();
                 List<PendaftaranMudik> listPenumpang = entry.getValue();
 
-                // Bersihkan nama sheet dari karakter terlarang Excel (:/ \ ? * [ ])
                 String safeSheetName = namaRute.replaceAll("[:/\\\\?*\\[\\]]", " ").trim();
-                if (safeSheetName.length() > 30) safeSheetName = safeSheetName.substring(0, 30); // Max 31 chars
+                if (safeSheetName.length() > 30) safeSheetName = safeSheetName.substring(0, 30);
 
-                // Kalau nama sheet duplikat, tambah angka dikit (jarang terjadi sih)
                 Sheet sheet = workbook.createSheet(safeSheetName);
-
                 buatIsiSheet(workbook, sheet, namaRute, listPenumpang);
             }
 
-            // Write to Byte Array
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             workbook.write(out);
             return out.toByteArray();
@@ -46,43 +39,68 @@ public class ExcelService {
     }
 
     private void buatIsiSheet(Workbook workbook, Sheet sheet, String namaRute, List<PendaftaranMudik> list) {
-        // --- STYLE ---
-        CellStyle headerStyle = createHeaderStyle(workbook);
-        CellStyle boldStyle = workbook.createCellStyle();
-        Font f = workbook.createFont(); f.setBold(true); boldStyle.setFont(f);
 
-        // --- 1. JUDUL BESAR & REKAP KATEGORI (Permintaan Klien) ---
-        // Hitung Kategori
+        CellStyle headerStyle = createHeaderStyle(workbook);
+
+        CellStyle boldStyle = workbook.createCellStyle();
+        Font f = workbook.createFont();
+        f.setBold(true);
+        boldStyle.setFont(f);
+
+        CellStyle statusOkStyle = createStatusStyle(workbook, IndexedColors.GREEN);
+        CellStyle statusFailStyle = createStatusStyle(workbook, IndexedColors.RED);
+        CellStyle statusWaitStyle = createStatusStyle(workbook, IndexedColors.ORANGE);
+
         long total = list.size();
+
         long dewasa = list.stream().filter(p -> "DEWASA".equalsIgnoreCase(p.kategori_penumpang)).count();
         long anak = list.stream().filter(p -> "ANAK".equalsIgnoreCase(p.kategori_penumpang)).count();
         long bayi = list.stream().filter(p -> "BAYI".equalsIgnoreCase(p.kategori_penumpang)).count();
 
-        // Judul Rute
+        long sukses = list.stream().filter(p -> "DITERIMA".equalsIgnoreCase(p.status_pendaftaran)).count();
+        long menunggu = list.stream().filter(p -> "MENUNGGU_VERIFIKASI".equalsIgnoreCase(p.status_pendaftaran)).count();
+        long gagal = list.stream().filter(p ->
+                "DITOLAK".equalsIgnoreCase(p.status_pendaftaran) ||
+                        "DIBATALKAN".equalsIgnoreCase(p.status_pendaftaran)
+        ).count();
+
+
         Row rowJudul = sheet.createRow(0);
         Cell cellJudul = rowJudul.createCell(0);
         cellJudul.setCellValue("LAPORAN MUDIK: " + namaRute.toUpperCase());
         cellJudul.setCellStyle(boldStyle);
 
-        // Tabel Rekap Kecil di Atas
-        sheet.createRow(1).createCell(0).setCellValue("Ringkasan Penumpang:");
 
-        Row rowRekapHead = sheet.createRow(2);
-        rowRekapHead.createCell(0).setCellValue("Total");
-        rowRekapHead.createCell(1).setCellValue("Dewasa");
-        rowRekapHead.createCell(2).setCellValue("Anak");
-        rowRekapHead.createCell(3).setCellValue("Bayi");
-        // Style Header Rekap
-        for(int i=0; i<=3; i++) rowRekapHead.getCell(i).setCellStyle(headerStyle);
+        sheet.createRow(1).createCell(0).setCellValue("Ringkasan Kategori (Untuk Bus):");
 
-        Row rowRekapVal = sheet.createRow(3);
-        rowRekapVal.createCell(0).setCellValue(total);
-        rowRekapVal.createCell(1).setCellValue(dewasa);
-        rowRekapVal.createCell(2).setCellValue(anak);
-        rowRekapVal.createCell(3).setCellValue(bayi);
+        Row rowHead1 = sheet.createRow(2);
+        rowHead1.createCell(0).setCellValue("Total");
+        rowHead1.createCell(1).setCellValue("Dewasa");
+        rowHead1.createCell(2).setCellValue("Anak");
+        rowHead1.createCell(3).setCellValue("Bayi");
+        for (int i = 0; i <= 3; i++) rowHead1.getCell(i).setCellStyle(headerStyle);
 
-        // --- 2. HEADER TABEL DATA ---
-        int startRow = 5; // Mulai baris ke-6
+        Row rowVal1 = sheet.createRow(3);
+        rowVal1.createCell(0).setCellValue(total);
+        rowVal1.createCell(1).setCellValue(dewasa);
+        rowVal1.createCell(2).setCellValue(anak);
+        rowVal1.createCell(3).setCellValue(bayi);
+
+
+        sheet.getRow(1).createCell(5).setCellValue("Ringkasan Status (Laporan Klien):");
+
+        Row rowHead2 = sheet.getRow(2);
+        rowHead2.createCell(5).setCellValue("DITERIMA");
+        rowHead2.createCell(6).setCellValue("MENUNGGU");
+        rowHead2.createCell(7).setCellValue("GAGAL (Tolak/Batal)");
+        for (int i = 5; i <= 7; i++) rowHead2.getCell(i).setCellStyle(headerStyle);
+
+        Row rowVal2 = sheet.getRow(3);
+        rowVal2.createCell(5).setCellValue(sukses);
+        rowVal2.createCell(6).setCellValue(menunggu);
+        rowVal2.createCell(7).setCellValue(gagal);
+
+        int startRow = 6;
         Row headerRow = sheet.createRow(startRow);
         String[] columns = {"No", "Nama Peserta", "NIK", "Kategori", "JK", "Titik Jemput", "No HP", "Kode Booking", "Status"};
 
@@ -92,7 +110,6 @@ public class ExcelService {
             cell.setCellStyle(headerStyle);
         }
 
-        // --- 3. ISI DATA PENUMPANG ---
         int rowNum = startRow + 1;
         for (PendaftaranMudik p : list) {
             Row row = sheet.createRow(rowNum++);
@@ -100,21 +117,30 @@ public class ExcelService {
             row.createCell(0).setCellValue(rowNum - startRow - 1);
             row.createCell(1).setCellValue(p.nama_peserta);
             row.createCell(2).setCellValue(p.nik_peserta);
-            row.createCell(3).setCellValue(p.kategori_penumpang); // PENTING: Kategori
+            row.createCell(3).setCellValue(p.kategori_penumpang);
             row.createCell(4).setCellValue(p.jenis_kelamin);
-            row.createCell(5).setCellValue(p.titik_jemput);
+            row.createCell(5).setCellValue(p.alamat_rumah);
 
-            // Logic HP
             String hp = (p.no_hp_peserta != null && p.no_hp_peserta.length() > 5)
                     ? p.no_hp_peserta
                     : ((p.user != null) ? p.user.no_hp : "-");
             row.createCell(6).setCellValue(hp);
 
             row.createCell(7).setCellValue(p.kode_booking != null ? p.kode_booking : "-");
-            row.createCell(8).setCellValue(p.status_pendaftaran);
+
+            Cell cellStatus = row.createCell(8);
+            String status = p.status_pendaftaran;
+            cellStatus.setCellValue(status);
+
+            if ("DITERIMA".equalsIgnoreCase(status)) {
+                cellStatus.setCellStyle(statusOkStyle);
+            } else if ("DITOLAK".equalsIgnoreCase(status) || "DIBATALKAN".equalsIgnoreCase(status)) {
+                cellStatus.setCellStyle(statusFailStyle);
+            } else {
+                cellStatus.setCellStyle(statusWaitStyle);
+            }
         }
 
-        // Auto Size Columns
         for (int i = 0; i < columns.length; i++) {
             sheet.autoSizeColumn(i);
         }
@@ -131,6 +157,15 @@ public class ExcelService {
         style.setBorderTop(BorderStyle.THIN);
         style.setBorderRight(BorderStyle.THIN);
         style.setBorderLeft(BorderStyle.THIN);
+        return style;
+    }
+
+    private CellStyle createStatusStyle(Workbook workbook, IndexedColors color) {
+        CellStyle style = workbook.createCellStyle();
+        Font font = workbook.createFont();
+        font.setColor(color.getIndex());
+        font.setBold(true);
+        style.setFont(font);
         return style;
     }
 }

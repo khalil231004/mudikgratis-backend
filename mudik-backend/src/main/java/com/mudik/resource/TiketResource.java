@@ -18,8 +18,6 @@ public class TiketResource {
     public Response downloadTiket(@PathParam("id") Long id) {
 
         PendaftaranMudik pendaftar = PendaftaranMudik.findById(id);
-
-        // Validasi Dasar
         if (pendaftar == null) {
             return Response.status(404).entity("Data pendaftaran tidak ditemukan").build();
         }

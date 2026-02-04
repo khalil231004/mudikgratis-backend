@@ -12,12 +12,10 @@ public class AuthService {
     @Transactional
     public User registerUser(String nama, String email, String password, String nik, String nohp, String jenisKelamin) {
 
-        // 1. Cek Email Kembar
         if (User.find("email", email).firstResult() != null) {
             throw new IllegalArgumentException("Email sudah terdaftar!");
         }
 
-        // 2. Cek NIK Kembar (Biar data valid)
         if (User.find("nik", nik).firstResult() != null) {
             throw new IllegalArgumentException("NIK sudah digunakan!");
         }
