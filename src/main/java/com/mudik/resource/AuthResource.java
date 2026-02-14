@@ -56,7 +56,7 @@ public class AuthResource {
         public String email;
         public String password;
     }
-
+//baru
     @POST
     @Path("/register")
     @PermitAll
