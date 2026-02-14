@@ -1,0 +1,50 @@
+# --- DATABASE CONFIG ---
+quarkus.datasource.db-kind=postgresql
+quarkus.datasource.username=${DB_USER}
+quarkus.datasource.password=${DB_PASSWORD}
+quarkus.datasource.jdbc.url=${DB_URL}
+
+# Agar tabel update otomatis (Hati-hati di production, sebaiknya 'validate' atau 'none')
+quarkus.hibernate-orm.database.generation=validate
+quarkus.hibernate-orm.log.sql=true
+quarkus.hibernate-orm.panache.database.default-schema=public
+quarkus.hibernate-orm.sql-load-script=no-file
+
+#
+#
+# --- EMAIL CONFIG ---
+quarkus.mailer.host=smtp.gmail.com
+quarkus.mailer.port=587
+quarkus.mailer.start-tls=REQUIRED
+quarkus.mailer.mock=false
+quarkus.mailer.from=${MAIL_USERNAME}
+quarkus.mailer.username=${MAIL_USERNAME}
+quarkus.mailer.password=${MAIL_PASSWORD}
+
+# --- SECURITY (JWT) ---
+mp.jwt.verify.publickey.location=NONE
+mp.jwt.verify.issuer=https://mudik-api.com
+smallrye.jwt.verify.key.location=NONE
+smallrye.jwt.sign.key=r7NmAExOMIt9qJiz0Hbyhf5f/lhUFcO8K4HhtSaqBHQ=
+
+# --- APP CONFIG ---
+app.base.url=https://seulamat.dishubaceh.com
+#app.base.url=https://172.10.20.189:8080
+
+quarkus.http.body.uploads-directory=uploads
+quarkus.http.static-resources.index-page=index.html
+quarkus.http.host=0.0.0.0
+
+# Dev UI (Biar bisa diakses dari IP lain saat dev)
+quarkus.dev-ui.hosts=0.0.0.0
+
+# --- REST CLIENT ---
+quarkus.rest-client.osrm-api.url=http://router.project-osrm.org
+quarkus.rest-client.osrm-api.scope=jakarta.inject.Singleton
+
+# --- SECURITY POLICY ---
+quarkus.http.auth.permission.authenticated.paths=/api/*
+quarkus.http.auth.permission.authenticated.policy=authenticated
+
+# --- LIMIT UPLOAD ---
+quarkus.http.limits.max-body-size=5M
