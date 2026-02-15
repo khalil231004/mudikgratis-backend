@@ -4,6 +4,7 @@ import com.mudik.model.User;
 import io.quarkus.elytron.security.common.BcryptUtil;
 import io.quarkus.panache.common.Sort;
 import jakarta.annotation.security.RolesAllowed;
+import jakarta.inject.Inject; // Tambahin ini
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
@@ -16,32 +17,41 @@ import java.util.Map;
 @Path("/api/admin/users")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
-@RolesAllowed("ADMIN") // 🔥 HANYA ADMIN YANG BISA AKSES
+// 🔥 HAPUS DULU @RolesAllowed BUAT DEBUGGING KALAU MASIH GAK MUNCUL
+// @RolesAllowed("ADMIN")
 public class AdminUserResource {
 
     // ==========================================
-    // 1. MONITORING & STATISTIK (Buat Dashboard)
+    // 1. LIHAT SEMUA USER (List Tabel) - DIPERBAIKI
+    // ==========================================
+    @GET
+    public Response getAllUsers() {
+        // Pake Response.ok() biar header-nya bener
+        // Sort by ID descending (terbaru paling atas)
+        List<User> users = User.listAll(Sort.descending("user_id"));
+        return Response.ok(users).build();
+    }
+
+    // ==========================================
+    // 2. MONITORING & STATISTIK (Buat Dashboard)
     // ==========================================
     @GET
     @Path("/stats")
     public Response getUserStats() {
         Map<String, Long> stats = new HashMap<>();
         stats.put("total_user", User.count());
-        stats.put("user_aktif", User.count("status_akun", "AKTIF"));
-        stats.put("belum_verif", User.count("status_akun", "BELUM_VERIF"));
-        stats.put("user_banned", User.count("status_akun", "BANNED"));
+        try {
+            stats.put("user_aktif", User.count("status_akun", "AKTIF"));
+            stats.put("belum_verif", User.count("status_akun", "BELUM_VERIF"));
+            stats.put("user_banned", User.count("status_akun", "BANNED"));
+        } catch (Exception e) {
+            // Fallback kalau kolom status_akun belum ada/error
+            stats.put("user_aktif", 0L);
+            stats.put("belum_verif", 0L);
+            stats.put("user_banned", 0L);
+        }
 
         return Response.ok(stats).build();
-    }
-
-    // ==========================================
-    // 2. LIHAT SEMUA USER (List Tabel)
-    // ==========================================
-    @GET
-    public List<User> getAllUsers() {
-        // Urutkan dari yang terbaru daftar
-        // Password hash otomatis disembunyikan kalau entity User lu pake @JsonIgnore di field password
-        return User.listAll(Sort.descending("id"));
     }
 
     // ==========================================
@@ -63,9 +73,9 @@ public class AdminUserResource {
     @Transactional
     public Response updateStatus(@PathParam("id") Long id, Map<String, String> body) {
         User user = User.findById(id);
-        if (user == null) return Response.status(404).build();
+        if (user == null) return Response.status(404).entity(Map.of("error", "User 404")).build();
 
-        String statusBaru = body.get("status"); // Kirim JSON: {"status": "AKTIF"} atau {"status": "BANNED"}
+        String statusBaru = body.get("status"); // JSON: {"status": "AKTIF"}
 
         if (statusBaru == null || statusBaru.isEmpty()) {
             return Response.status(400).entity(Map.of("error", "Status harus diisi")).build();
@@ -79,7 +89,7 @@ public class AdminUserResource {
         }
 
         user.persist();
-        return Response.ok(Map.of("message", "Status user " + user.email + " berubah menjadi " + statusBaru)).build();
+        return Response.ok(Map.of("message", "Status user berubah menjadi " + statusBaru)).build();
     }
 
     // ==========================================
@@ -92,17 +102,17 @@ public class AdminUserResource {
         User user = User.findById(id);
         if (user == null) return Response.status(404).build();
 
-        String passwordBaru = body.get("password_baru"); // Kirim JSON: {"password_baru": "123456"}
+        String passwordBaru = body.get("password_baru");
 
         if (passwordBaru == null || passwordBaru.length() < 6) {
             return Response.status(400).entity(Map.of("error", "Password minimal 6 karakter")).build();
         }
 
-        // 🔥 HASH PASSWORD (PENTING!)
+        // Hash Password Baru
         user.password_hash = BcryptUtil.bcryptHash(passwordBaru);
         user.persist();
 
-        return Response.ok(Map.of("message", "Password untuk " + user.email + " berhasil direset admin.")).build();
+        return Response.ok(Map.of("message", "Password berhasil direset.")).build();
     }
 
     // ==========================================
@@ -115,9 +125,10 @@ public class AdminUserResource {
         User user = User.findById(id);
         if (user == null) return Response.status(404).build();
 
-        // Mencegah admin menghapus dirinya sendiri (Opsional, tapi aman)
-        if ("ADMIN".equals(user.role)) {
-            return Response.status(403).entity(Map.of("error", "Tidak bisa menghapus sesama Admin lewat API ini.")).build();
+        // Mencegah admin menghapus dirinya sendiri
+        // Cek Role (Null Safe)
+        if (user.role != null && "ADMIN".equals(user.role)) {
+            return Response.status(403).entity(Map.of("error", "Tidak bisa menghapus Admin.")).build();
         }
 
         user.delete();

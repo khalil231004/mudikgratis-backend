@@ -94,45 +94,76 @@ public class AdminResource {
     @Path("/verifikasi-keluarga/{userId}")
     @Transactional
     public Response verifikasiKeluarga(@PathParam("userId") Long userId, Map<String, String> body) {
-        String aksi = body.get("status");
-        if (aksi == null) return Response.status(400).build();
+        String aksi = body.get("status"); // TERIMA, TOLAK, RESET
+        if (aksi == null) return Response.status(400).entity(Map.of("error", "Status wajib diisi")).build();
 
+        // Ambil SEMUA data keluarga
         List<PendaftaranMudik> keluarga = PendaftaranMudik.list("user.user_id", userId);
-        if (keluarga.isEmpty()) return Response.status(404).entity(Map.of("error", "Data user kosong")).build();
+        if (keluarga.isEmpty()) return Response.status(404).entity(Map.of("error", "Data keluarga tidak ditemukan")).build();
 
         int count = 0;
         for (PendaftaranMudik p : keluarga) {
-            if (aksi.equalsIgnoreCase(p.status_pendaftaran)) continue;
+            String oldStatus = p.status_pendaftaran;
 
-            // Jika DITOLAK -> Balikin Kuota Pending Rute
-            if ("DITOLAK".equals(aksi) && !"DITOLAK".equals(p.status_pendaftaran)) {
-                if (p.rute != null && p.rute.kuota_terisi > 0) {
-                    p.rute.kuota_terisi -= 1;
+            // 🛑 VALIDASI STATUS (Biar Data Ditolak Gak Keubah Jadi Diterima)
+            // Kalau status skrg DITOLAK, jangan diubah kecuali aksinya RESET
+            if ("DITOLAK".equals(oldStatus) && !"RESET".equals(aksi)) {
+                continue;
+            }
+
+            // Kalau status sama, skip
+            if (aksi.equalsIgnoreCase(oldStatus)) continue;
+
+            // -------------------------------------------------------------
+            // ⚖️ LOGIKA KUOTA RUTE (Terpisah dari Bus)
+            // -------------------------------------------------------------
+            Rute rute = p.rute;
+            if (rute != null) {
+                // A. KASUS TOLAK: Balikin Kuota Rute
+                if ("DITOLAK".equals(aksi)) {
+                    // Cek dulu apakah dia sebelumnya menempati kuota? (MENUNGGU/DITERIMA/TERKONFIRMASI)
+                    if (!"DITOLAK".equals(oldStatus) && !"DIBATALKAN".equals(oldStatus)) {
+                        if (rute.kuota_terisi > 0) {
+                            rute.kuota_terisi -= 1; // 🟢 BALIKIN KUOTA
+                        }
+                    }
                 }
-                // Hapus dari bus jika ada
-                if (p.kendaraan != null) {
-                    p.kendaraan.terisi -= 1;
-                    p.kendaraan.persist();
-                    p.kendaraan = null;
+
+                // B. KASUS TERIMA/RESET (Dari Ditolak): Ambil Kuota Lagi
+                // (Misal: Admin salah tolak, terus mau balikin jadi DITERIMA)
+                else if (("DITERIMA".equals(aksi) || "MENUNGGU_VERIFIKASI".equals(aksi)) && "DITOLAK".equals(oldStatus)) {
+                    // Cek sisa kuota dulu, masih ada gak?
+                    if (rute.getSisaKuota() <= 0) {
+                        throw new WebApplicationException("Gagal memulihkan status: Kuota Rute Habis!", 409);
+                    }
+                    rute.kuota_terisi += 1; // 🔴 PAKAI KUOTA LAGI
                 }
             }
 
-            // Jika RESET -> Hapus dari bus
-            if ("MENUNGGU_VERIFIKASI".equals(aksi)) {
+            // -------------------------------------------------------------
+            // 🚌 LOGIKA BUS (Hapus dari Bus kalau Ditolak/Reset)
+            // -------------------------------------------------------------
+            if ("DITOLAK".equals(aksi) || "MENUNGGU_VERIFIKASI".equals(aksi)) {
                 if (p.kendaraan != null) {
-                    p.kendaraan.terisi -= 1;
-                    p.kendaraan.persist();
-                    p.kendaraan = null;
+                    p.kendaraan.terisi -= 1; // Kosongkan kursi bus
+                    p.kendaraan = null;      // Lepas relasi bus
                 }
             }
 
-            p.status_pendaftaran = aksi;
-            p.persist();
+            // Update Status Akhir
+            p.status_pendaftaran = aksi.equals("RESET") ? "MENUNGGU_VERIFIKASI" : aksi;
+
+            p.persist(); // Simpan Perubahan Pendaftaran
+            if (rute != null) rute.persist(); // Simpan Perubahan Kuota Rute
+
             count++;
         }
-        return Response.ok(Map.of("status", "BERHASIL", "pesan", count + " keluarga status: " + aksi)).build();
-    }
 
+        return Response.ok(Map.of(
+                "status", "BERHASIL",
+                "pesan", count + " anggota keluarga berhasil di-update ke status " + aksi
+        )).build();
+    }
     // =================================================================
     // 3. PLOTTING BUS (LOGIC: LOCK H-3 & SWAP BUS)
     // =================================================================

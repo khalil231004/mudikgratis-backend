@@ -6,6 +6,7 @@ import jakarta.validation.constraints.NotBlank;
 import org.hibernate.annotations.CreationTimestamp;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Entity
 @Table(name = "pendaftaran_mudik")
@@ -59,6 +60,24 @@ public class PendaftaranMudik extends PanacheEntityBase {
     public String alamat_rumah;
     public String kode_booking;
 
+    // 🔥 TAMBAHAN UUID (PENTING BUAT LINK AMAN)
+    @Column(unique = true, updatable = false)
+    public String uuid;
+
     @CreationTimestamp
     public LocalDateTime created_at;
+
+    // 🔥 GENERATE UUID & TANGGAL OTOMATIS
+    @PrePersist
+    public void prePersist() {
+        if (uuid == null) {
+            uuid = UUID.randomUUID().toString();
+        }
+        if (created_at == null) {
+            created_at = LocalDateTime.now();
+        }
+        if (status_pendaftaran == null) {
+            status_pendaftaran = "MENUNGGU_VERIFIKASI";
+        }
+    }
 }

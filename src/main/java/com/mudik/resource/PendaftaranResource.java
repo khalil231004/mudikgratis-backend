@@ -22,9 +22,10 @@ import java.util.*;
 @Path("/api/pendaftaran")
 public class PendaftaranResource {
 
-    private static final String UPLOAD_DIR = "uploads/";
+    // 🔥 SESUAIKAN DENGAN VPS (ABSOLUTE PATH)
+    private static final String UPLOAD_DIR = "/opt/mudik-v2/uploads/";
 
-    // Form Data Wrapper
+    // 1. FORM DATA WRAPPER
     public static class PendaftaranMultipartForm {
         @RestForm("nama_peserta") public List<String> nama_peserta;
         @RestForm("nik_peserta") public List<String> nik_peserta;
@@ -35,42 +36,57 @@ public class PendaftaranResource {
         @RestForm("ukuran_barang") public List<String> ukuran_barang;
         @RestForm("alamat_rumah") public List<String> alamat_rumah;
         @RestForm("no_hp_peserta") public List<String> no_hp_peserta;
-        @RestForm("foto_bukti") public List<FileUpload> fotoBukti;
+        @RestForm("fotoBukti") public List<FileUpload> fotoBukti;
     }
 
-    // --- 1. GET RIWAYAT (SINKRON DENGAN ADMIN) ---
+    // Form Khusus Edit Data
+    public static class EditForm {
+        @RestForm("nama_peserta") public String nama_peserta;
+        @RestForm("nik_peserta") public String nik_peserta;
+        @RestForm("jenis_kelamin") public String jenis_kelamin;
+        @RestForm("tanggal_lahir") public String tanggal_lahir;
+        @RestForm("fotoBukti") public FileUpload fotoBukti;
+    }
+
+    // ==========================================================
+    // 1. GET RIWAYAT (MANUAL MAPPING - PENTING BUAT FRONTEND)
+    // ==========================================================
     @GET
     @Path("/riwayat")
     @Produces(MediaType.APPLICATION_JSON)
-    public Response riwayatPendaftaran(@HeaderParam("userId") Long userId) {
-        if (userId == null) return Response.status(400).entity(Map.of("error", "User ID wajib diisi")).build();
+    public Response riwayat(@HeaderParam("userId") Long userId) {
+        if (userId == null) return Response.status(401).entity(Map.of("error", "Unauthorized")).build();
 
-        // Ambil data user
+        // Ambil data sort by terbaru
         List<PendaftaranMudik> list = PendaftaranMudik.list("user.user_id = ?1 ORDER BY created_at DESC", userId);
 
-        // MAPPING MANUAL BIAR SINKRON SAMA ADMIN
-        // Kita tidak return entity mentah, tapi JSON yang sudah dirapikan
+        // Mapping ke JSON bersih biar Frontend enak bacanya
         List<Map<String, Object>> result = new ArrayList<>();
 
         for (PendaftaranMudik p : list) {
             Map<String, Object> map = new HashMap<>();
             map.put("pendaftaran_id", p.pendaftaran_id);
-            map.put("kode_booking", p.kode_booking != null ? p.kode_booking : "-");
+            map.put("kode_booking", p.kode_booking);
             map.put("status_pendaftaran", p.status_pendaftaran);
             map.put("nama_peserta", p.nama_peserta);
             map.put("nik_peserta", p.nik_peserta);
+            map.put("uuid", p.uuid); // Penting buat link QR
 
             // Info Rute
-            map.put("tujuan", p.rute != null ? p.rute.tujuan : "-");
-            map.put("tanggal_keberangkatan", p.rute != null ? p.rute.getFormattedDate() : "-");
+            if (p.rute != null) {
+                map.put("tujuan", p.rute.tujuan);
+                map.put("tanggal_keberangkatan", p.rute.getFormattedDate());
+            } else {
+                map.put("tujuan", "-");
+                map.put("tanggal_keberangkatan", "-");
+            }
 
-            // Info Bus (Ambil dari Kendaraan, BUKAN Rute)
-            // Ini kunci biar data bus muncul di dashboard user
+            // Info Bus (KUNCI: Ambil dari Kendaraan, bukan Rute)
             if (p.kendaraan != null) {
                 map.put("nama_bus", p.kendaraan.nama_armada);
                 map.put("plat_nomor", p.kendaraan.plat_nomor);
             } else {
-                map.put("nama_bus", "Menunggu Plotting");
+                map.put("nama_bus", "Belum Plotting"); // Default value
                 map.put("plat_nomor", "-");
             }
 
@@ -80,7 +96,9 @@ public class PendaftaranResource {
         return Response.ok(result).build();
     }
 
-    // --- 2. POST DAFTAR (VALIDASI DUPLIKAT & KUOTA) ---
+    // ==========================================================
+    // 2. POST DAFTAR BATCH (LOGIC KUOTA & NIK FIXED)
+    // ==========================================================
     @POST
     @Transactional
     @Consumes(MediaType.MULTIPART_FORM_DATA)
@@ -101,28 +119,35 @@ public class PendaftaranResource {
             Rute rute = Rute.findById(ruteId);
             if (rute == null) return Response.status(404).entity(Map.of("error", "Rute tidak ditemukan")).build();
 
-            int jumlahPesertaBaru = form.nama_peserta.size();
+            int jumlahPesertaBaru = (form.nama_peserta != null) ? form.nama_peserta.size() : 0;
+            if (jumlahPesertaBaru == 0) return Response.status(400).entity(Map.of("error", "Data kosong")).build();
 
-            // 🔥 VALIDASI 1: LIMIT KUOTA AKUN (Max 6 orang per Akun)
-            long sudahDaftar = PendaftaranMudik.count("user.user_id", userId);
-            if (sudahDaftar + jumlahPesertaBaru > 6) {
+            // 🔥 VALIDASI KUOTA RUTE (CRITICAL)
+            if (rute.getSisaKuota() < jumlahPesertaBaru) {
                 return Response.status(400).entity(Map.of(
-                        "error", "Kuota akun penuh! Anda sudah mendaftarkan " + sudahDaftar + " orang. Sisa slot: " + (6 - sudahDaftar)
+                        "error", "Mohon maaf, Kuota Rute Habis! Sisa tiket: " + rute.getSisaKuota()
                 )).build();
             }
 
-            // 🔥 VALIDASI 2: CEK NIK DUPLIKAT (GLOBAL)
-            // Loop cek setiap NIK yang mau didaftarkan
-            for (String nik : form.nik_peserta) {
-                long cekNik = PendaftaranMudik.count("nik_peserta", nik);
-                if (cekNik > 0) {
-                    return Response.status(400).entity(Map.of(
-                            "error", "NIK " + nik + " sudah terdaftar di sistem! Tidak boleh daftar ganda."
-                    )).build();
-                }
+            // Validasi Limit Akun
+            long sudahDaftar = PendaftaranMudik.count("user.user_id", userId);
+            if (sudahDaftar + jumlahPesertaBaru > 6) {
+                return Response.status(400).entity(Map.of(
+                        "error", "Kuota akun penuh! Sisa slot: " + (6 - sudahDaftar)
+                )).build();
             }
 
-            // PROSES SIMPAN DATA
+            // 🔥 VALIDASI NIK DUPLIKAT
+            List<String> nikDuplikat = new ArrayList<>();
+            for (String nik : form.nik_peserta) {
+                long cekNik = PendaftaranMudik.count("nik_peserta = ?1 AND status_pendaftaran != 'DIBATALKAN'", nik);
+                if (cekNik > 0) nikDuplikat.add(nik);
+            }
+            if (!nikDuplikat.isEmpty()) {
+                return Response.status(409).entity(Map.of("error", "NIK berikut sudah terdaftar: " + String.join(", ", nikDuplikat))).build();
+            }
+
+            // SIMPAN DATA
             for (int i = 0; i < jumlahPesertaBaru; i++) {
                 PendaftaranMudik p = new PendaftaranMudik();
                 p.user = user;
@@ -131,110 +156,136 @@ public class PendaftaranResource {
                 p.nik_peserta = form.nik_peserta.get(i);
                 p.jenis_kelamin = form.jenis_kelamin.get(i);
 
-                // Parse Tanggal & Kategori
-                LocalDate tgl = LocalDate.parse(form.tanggal_lahir.get(i));
-                p.tanggal_lahir = tgl;
-                int umur = Period.between(tgl, LocalDate.now()).getYears();
-                p.kategori_penumpang = (umur < 5) ? "ANAK" : "DEWASA";
-
-                // Data Lain
-                if (form.jenis_identitas != null) p.jenis_identitas = form.jenis_identitas.get(i);
-                if (form.jenis_barang != null) p.jenis_barang = form.jenis_barang.get(i);
-                if (form.ukuran_barang != null) p.ukuran_barang = form.ukuran_barang.get(i);
-                if (form.alamat_rumah != null) p.alamat_rumah = form.alamat_rumah.get(i);
-
-                // HP
-                if (form.no_hp_peserta != null && i < form.no_hp_peserta.size()) {
-                    p.no_hp_peserta = form.no_hp_peserta.get(i);
-                } else {
-                    p.no_hp_peserta = user.no_hp; // Default HP Akun
+                try {
+                    LocalDate tgl = LocalDate.parse(form.tanggal_lahir.get(i));
+                    p.tanggal_lahir = tgl;
+                    int umur = Period.between(tgl, LocalDate.now()).getYears();
+                    p.kategori_penumpang = (umur < 5) ? "ANAK" : "DEWASA";
+                } catch (Exception e) {
+                    p.tanggal_lahir = LocalDate.of(2000, 1, 1);
+                    p.kategori_penumpang = "DEWASA";
                 }
 
-                // Upload Foto
-                if (form.fotoBukti != null && i < form.fotoBukti.size()) {
+                if (form.jenis_identitas != null) p.jenis_identitas = form.jenis_identitas.get(i);
+                if (form.no_hp_peserta != null && i < form.no_hp_peserta.size())
+                    p.no_hp_peserta = form.no_hp_peserta.get(i);
+                else p.no_hp_peserta = user.no_hp;
+
+                // UPLOAD FOTO
+                if (form.fotoBukti != null && i < form.fotoBukti.size() && form.fotoBukti.get(i) != null && form.fotoBukti.get(i).fileName() != null) {
                     p.foto_identitas_path = simpanFile(form.fotoBukti.get(i), p.nik_peserta);
                 }
 
                 p.status_pendaftaran = "MENUNGGU_VERIFIKASI";
-                p.kode_booking = "MDK-" + System.currentTimeMillis() + "-" + i;
+                p.kode_booking = "MDK-" + System.currentTimeMillis() + "-" + (i + 1);
 
                 p.persist();
             }
 
-            // Update Kuota Terisi Rute (Triple Kuota Logic - Opsional di sini, tapi bagus buat update real time)
+            // 🔥 UPDATE KUOTA RUTE (LANGSUNG POTONG)
             if (rute.kuota_terisi == null) rute.kuota_terisi = 0;
-            // Kita tidak nambah kuota terisi disini dulu biar Admin yang validasi,
-            // TAPI kalau mau langsung potong kuota, uncomment baris ini:
-            // rute.kuota_terisi += jumlahPesertaBaru;
+            rute.kuota_terisi += jumlahPesertaBaru;
+            rute.persist();
 
-            return Response.ok(Map.of(
-                    "status", "BERHASIL",
-                    "pesan", jumlahPesertaBaru + " peserta berhasil didaftarkan!"
-            )).build();
-
+            return Response.ok(Map.of("status", "BERHASIL", "pesan", "Daftar Sukses!")).build();
         } catch (Exception e) {
             e.printStackTrace();
-            return Response.serverError().entity(Map.of("error", "Server Error: " + e.getMessage())).build();
+            return Response.serverError().entity(Map.of("error", e.getMessage())).build();
         }
     }
 
-    // Helper Upload
-    private String simpanFile(FileUpload fileUpload, String nik) throws IOException {
-        File folder = new File(UPLOAD_DIR);
-        if (!folder.exists()) folder.mkdirs();
-        String originalName = fileUpload.fileName();
-        String ext = (originalName.contains(".")) ? originalName.substring(originalName.lastIndexOf(".")) : ".jpg";
-        String newName = "ktp-" + nik + "-" + UUID.randomUUID().toString().substring(0, 5) + ext;
-        File dest = new File(folder, newName);
-        Files.move(fileUpload.uploadedFile(), dest.toPath(), StandardCopyOption.REPLACE_EXISTING);
-        return UPLOAD_DIR + newName;
-    }
-
-    // =================================================================
-    // 3. KONFIRMASI KEHADIRAN (USER KLIK LINK WA)
-    // =================================================================
+    // ==========================================================
+    // 3. FITUR PERBAIKI DATA (EDIT STATUS DITOLAK)
+    // ==========================================================
     @PUT
-    @Path("/konfirmasi-kehadiran/{userId}")
+    @Path("/{id}/perbaiki")
     @Transactional
-    public Response konfirmasiKehadiran(@PathParam("userId") Long userId, Map<String, List<Long>> body) {
-        List<Long> idsTetapIkut = body.get("ids_konfirmasi"); // ID yang dicentang user
-        if (idsTetapIkut == null) return Response.status(400).build();
+    @Consumes(MediaType.MULTIPART_FORM_DATA)
+    public Response perbaikiData(
+            @PathParam("id") Long id,
+            @HeaderParam("userId") Long userId,
+            EditForm form
+    ) {
+        PendaftaranMudik p = PendaftaranMudik.findById(id);
+        if (p == null) return Response.status(404).build();
 
-        // Ambil yang statusnya DITERIMA (Belum konfirmasi)
-        List<PendaftaranMudik> keluarga = PendaftaranMudik.list("user.user_id = ?1 AND status_pendaftaran = 'DITERIMA'", userId);
+        if (!p.user.user_id.equals(userId)) return Response.status(403).build();
 
-        if (keluarga.isEmpty()) {
-            // Cek kalau mungkin mereka sudah konfirmasi sebelumnya
-            long sudahKonfirmasi = PendaftaranMudik.count("user.user_id = ?1 AND status_pendaftaran = 'TERKONFIRMASI'", userId);
-            if (sudahKonfirmasi > 0) {
-                return Response.ok(Map.of("status", "SUDAH_KONFIRMASI", "message", "Anda sudah melakukan konfirmasi sebelumnya.")).build();
-            }
-            return Response.status(404).entity(Map.of("error", "Tidak ada data yang perlu dikonfirmasi.")).build();
+        // Validasi Status (Hanya DITOLAK yang boleh diedit)
+        if (!"DITOLAK".equals(p.status_pendaftaran)) {
+            return Response.status(400).entity(Map.of("error", "Hanya data DITOLAK yang bisa diperbaiki")).build();
         }
 
-        int countHadir = 0;
-        int countBatal = 0;
-
-        for (PendaftaranMudik p : keluarga) {
-            if (idsTetapIkut.contains(p.pendaftaran_id)) {
-                // 🔥 UBAH STATUS JADI 'TERKONFIRMASI' (SYARAT PLOTTING)
-                p.status_pendaftaran = "TERKONFIRMASI";
-                countHadir++;
-            } else {
-                // Gak dicentang -> BATAL
-                p.status_pendaftaran = "DIBATALKAN";
-                // Balikin kuota rute (karena belum dapet bus, cuma balikin kuota_terisi/pending)
-                if (p.rute != null && p.rute.kuota_terisi > 0) {
-                    p.rute.kuota_terisi -= 1;
-                }
-                countBatal++;
-            }
-            p.persist();
+        // Cek Kuota (Ambil lagi)
+        if (p.rute.getSisaKuota() <= 0) {
+            return Response.status(400).entity(Map.of("error", "Maaf, kuota rute sudah habis.")).build();
         }
 
-        return Response.ok(Map.of(
-                "status", "BERHASIL",
-                "message", countHadir + " orang Terkonfirmasi, " + countBatal + " orang Dibatalkan."
-        )).build();
+        // Update Data
+        if (form.nama_peserta != null) p.nama_peserta = form.nama_peserta.toUpperCase();
+        if (form.nik_peserta != null) p.nik_peserta = form.nik_peserta;
+        if (form.jenis_kelamin != null) p.jenis_kelamin = form.jenis_kelamin;
+        if (form.tanggal_lahir != null) p.tanggal_lahir = LocalDate.parse(form.tanggal_lahir);
+
+        if (form.fotoBukti != null && form.fotoBukti.fileName() != null) {
+            p.foto_identitas_path = simpanFile(form.fotoBukti, p.nik_peserta);
+        }
+
+        // Ubah Status Jadi MENUNGGU & AMBIL KUOTA LAGI
+        p.status_pendaftaran = "MENUNGGU_VERIFIKASI";
+        p.rute.kuota_terisi += 1;
+
+        p.rute.persist();
+        p.persist();
+
+        return Response.ok(Map.of("status", "BERHASIL", "pesan", "Data diperbaiki")).build();
+    }
+
+    // ==========================================================
+    // 4. CEK BY UUID (POIN 7 - LINK AMAN)
+    // ==========================================================
+    @GET
+    @Path("/uuid/{uuid}")
+    public Response getByUuid(@PathParam("uuid") String uuid) {
+        return PendaftaranMudik.find("uuid", uuid).firstResultOptional()
+                .map(p -> Response.ok(p).build())
+                .orElse(Response.status(404).build());
+    }
+
+    // ==========================================================
+    // 5. FILE SERVING (ABSOLUTE PATH BIAR GAK 404)
+    // ==========================================================
+    @GET
+    @Path("/uploads/{filename}")
+    @Produces({"image/jpeg", "image/png", "application/pdf"})
+    public Response getFile(@PathParam("filename") String filename) {
+        File file = new File(UPLOAD_DIR + filename);
+        if (!file.exists()) return Response.status(404).build();
+        return Response.ok(file).build();
+    }
+
+    // ==========================================================
+    // HELPER: SIMPAN FILE (ABSOLUTE PATH)
+    // ==========================================================
+    private String simpanFile(FileUpload fileUpload, String nik) {
+        try {
+            File folder = new File(UPLOAD_DIR);
+            if (!folder.exists()) folder.mkdirs();
+
+            String originalName = fileUpload.fileName();
+            String ext = originalName.contains(".") ? originalName.substring(originalName.lastIndexOf(".")) : ".jpg";
+
+            // Pake UUID biar nama file gak bentrok
+            String newName = "KTP-" + nik + "-" + UUID.randomUUID().toString().substring(0, 8) + ext;
+
+            File dest = new File(folder, newName);
+            Files.move(fileUpload.uploadedFile(), dest.toPath(), StandardCopyOption.REPLACE_EXISTING);
+
+            // Return relative string "uploads/namafile.jpg" buat disimpan di DB
+            return "uploads/" + newName;
+        } catch (IOException e) {
+            e.printStackTrace();
+            return null;
+        }
     }
 }

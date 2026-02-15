@@ -15,13 +15,12 @@ import java.nio.file.StandardCopyOption;
 import java.util.Map;
 import java.util.UUID;
 
-
-@Path("/uploads")
+@Path("/uploads") // Akses via: https://api.domain.com/uploads/namafile.jpg
 @Singleton
 public class UploadResource {
 
-    private static final String UPLOAD_DIR = "./uploads/";
-
+    // 🔥 PENTING: Pake Absolute Path sesuai VPS biar gak 404
+    private static final String UPLOAD_DIR = "/opt/mudik-v2/uploads/";
 
     @POST
     @Consumes(MediaType.MULTIPART_FORM_DATA)
@@ -34,24 +33,19 @@ public class UploadResource {
 
             File directory = new File(UPLOAD_DIR);
             if (!directory.exists()) {
-                directory.mkdirs();
-                System.out.println("📁 Folder baru dibuat di: " + directory.getAbsolutePath());
+                directory.mkdirs(); // Buat folder kalau belum ada
             }
 
             String originalName = file.fileName();
             String ext = originalName.contains(".") ? originalName.substring(originalName.lastIndexOf(".")) : ".jpg";
-
             String newFileName = UUID.randomUUID().toString() + ext;
 
             java.nio.file.Path targetPath = Paths.get(UPLOAD_DIR + newFileName);
             Files.move(file.uploadedFile(), targetPath, StandardCopyOption.REPLACE_EXISTING);
 
-            System.out.println("✅ Upload Berhasil: " + targetPath.toString());
-
-
             return Response.ok(Map.of(
                     "status", "SUKSES",
-                    "saved_path", "uploads/" + newFileName
+                    "saved_path", "uploads/" + newFileName // Path relatif buat disimpen di DB
             )).build();
 
         } catch (IOException e) {
@@ -60,26 +54,19 @@ public class UploadResource {
         }
     }
 
-
     @GET
     @Path("/{fileName}")
     public Response getFile(@PathParam("fileName") String fileName) throws IOException {
-
-
+        // Security check (Directory Traversal Attack)
         if (fileName.contains("..") || fileName.contains("/") || fileName.contains("\\")) {
             return Response.status(400).build();
         }
 
-
         File file = new File(UPLOAD_DIR + fileName);
 
-        System.out.println("🔍 Request Gambar: " + file.getAbsolutePath());
-
         if (!file.exists()) {
-            System.out.println("❌ Gambar Tidak Ditemukan!");
             return Response.status(Response.Status.NOT_FOUND).build();
         }
-
 
         String contentType = Files.probeContentType(file.toPath());
         if (contentType == null) contentType = "application/octet-stream";
