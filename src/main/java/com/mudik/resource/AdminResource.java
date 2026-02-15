@@ -4,8 +4,7 @@ import com.mudik.model.Kendaraan;
 import com.mudik.model.PendaftaranMudik;
 import com.mudik.model.Rute;
 import com.mudik.service.ExcelService;
-import com.mudik.service.WhatsAppService; // 🔥 Import Service WA
-import jakarta.annotation.security.RolesAllowed;
+import com.mudik.service.WhatsAppService;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.*;
@@ -22,14 +21,13 @@ import java.util.stream.Collectors;
 @Path("/api/admin")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
-@RolesAllowed("ADMIN")
 public class AdminResource {
 
     @Inject
     ExcelService excelService;
 
     @Inject
-    WhatsAppService waService; // 🔥 Panggil Tukang WA
+    WhatsAppService waService;
 
     // =================================================================
     // 1. DASHBOARD & DATA PENDAFTAR
@@ -88,7 +86,7 @@ public class AdminResource {
     }
 
     // =================================================================
-    // 2. VERIFIKASI KELUARGA (TERIMA/TOLAK/RESET)
+    // 2. VERIFIKASI KELUARGA (TERIMA/TOLAK/RESET) - FIXED LOGIC
     // =================================================================
     @PUT
     @Path("/verifikasi-keluarga/{userId}")
@@ -102,17 +100,15 @@ public class AdminResource {
         if (keluarga.isEmpty()) return Response.status(404).entity(Map.of("error", "Data keluarga tidak ditemukan")).build();
 
         int count = 0;
+
+        // Tentukan target status string biar gampang compare
+        String targetStatus = "RESET".equals(aksi) ? "MENUNGGU_VERIFIKASI" : aksi;
+
         for (PendaftaranMudik p : keluarga) {
             String oldStatus = p.status_pendaftaran;
 
-            // 🛑 VALIDASI STATUS (Biar Data Ditolak Gak Keubah Jadi Diterima)
-            // Kalau status skrg DITOLAK, jangan diubah kecuali aksinya RESET
-            if ("DITOLAK".equals(oldStatus) && !"RESET".equals(aksi)) {
-                continue;
-            }
-
-            // Kalau status sama, skip
-            if (aksi.equalsIgnoreCase(oldStatus)) continue;
+            // 1. Skip kalau status tujuannya SAMA PERSIS dengan sekarang
+            if (targetStatus.equalsIgnoreCase(oldStatus)) continue;
 
             // -------------------------------------------------------------
             // ⚖️ LOGIKA KUOTA RUTE (Terpisah dari Bus)
@@ -120,8 +116,8 @@ public class AdminResource {
             Rute rute = p.rute;
             if (rute != null) {
                 // A. KASUS TOLAK: Balikin Kuota Rute
+                // (Hanya kalau sebelumnya dia menempati kuota / bukan DITOLAK)
                 if ("DITOLAK".equals(aksi)) {
-                    // Cek dulu apakah dia sebelumnya menempati kuota? (MENUNGGU/DITERIMA/TERKONFIRMASI)
                     if (!"DITOLAK".equals(oldStatus) && !"DIBATALKAN".equals(oldStatus)) {
                         if (rute.kuota_terisi > 0) {
                             rute.kuota_terisi -= 1; // 🟢 BALIKIN KUOTA
@@ -129,21 +125,24 @@ public class AdminResource {
                     }
                 }
 
-                // B. KASUS TERIMA/RESET (Dari Ditolak): Ambil Kuota Lagi
-                // (Misal: Admin salah tolak, terus mau balikin jadi DITERIMA)
-                else if (("DITERIMA".equals(aksi) || "MENUNGGU_VERIFIKASI".equals(aksi)) && "DITOLAK".equals(oldStatus)) {
+                // B. KASUS PEMULIHAN (Dari Ditolak -> Diterima/Reset): Ambil Kuota Lagi
+                // (Kalau sebelumnya DITOLAK/BATAL, berarti dia belum punya kursi, jadi harus ambil lagi)
+                else if ("DITOLAK".equals(oldStatus) || "DIBATALKAN".equals(oldStatus)) {
                     // Cek sisa kuota dulu, masih ada gak?
                     if (rute.getSisaKuota() <= 0) {
-                        throw new WebApplicationException("Gagal memulihkan status: Kuota Rute Habis!", 409);
+                        // Kalau kuota habis, skip orang ini aja (jangan errorin satu keluarga)
+                        // Atau bisa throw exception kalau mau strict
+                        continue;
                     }
-                    rute.kuota_terisi += 1; // 🔴 PAKAI KUOTA LAGI
+                    rute.kuota_terisi += 1; // 🔴 AMBIL KUOTA LAGI
                 }
             }
 
             // -------------------------------------------------------------
             // 🚌 LOGIKA BUS (Hapus dari Bus kalau Ditolak/Reset)
             // -------------------------------------------------------------
-            if ("DITOLAK".equals(aksi) || "MENUNGGU_VERIFIKASI".equals(aksi)) {
+            // Kalau status akhirnya bukan DITERIMA/TERKONFIRMASI, tendang dari bus
+            if ("DITOLAK".equals(targetStatus) || "MENUNGGU_VERIFIKASI".equals(targetStatus)) {
                 if (p.kendaraan != null) {
                     p.kendaraan.terisi -= 1; // Kosongkan kursi bus
                     p.kendaraan = null;      // Lepas relasi bus
@@ -151,7 +150,7 @@ public class AdminResource {
             }
 
             // Update Status Akhir
-            p.status_pendaftaran = aksi.equals("RESET") ? "MENUNGGU_VERIFIKASI" : aksi;
+            p.status_pendaftaran = targetStatus;
 
             p.persist(); // Simpan Perubahan Pendaftaran
             if (rute != null) rute.persist(); // Simpan Perubahan Kuota Rute
