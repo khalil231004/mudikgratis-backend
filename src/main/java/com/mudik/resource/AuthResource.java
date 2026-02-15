@@ -35,11 +35,11 @@ public class AuthResource {
     String jwtSecret;
 
     // URL Backend (VPS) - Dipakai buat bikin link verifikasi di email
-    @ConfigProperty(name = "app.base.url", defaultValue = "https://seulamat.dishubaceh.com")
+    @ConfigProperty(name = "app.base.url", defaultValue = "https://dishubosrm.acehprov.go.id")
     String baseUrl;
 
     // 🔥 URL FRONTEND (String Baru) - Dipakai buat redirect user setelah klik link
-    @ConfigProperty(name = "app.frontend.url", defaultValue = "https://dishubosrm.acehprov.go.id")
+    @ConfigProperty(name = "app.frontend.url", defaultValue = "https://seulamat.dishubaceh.com")
     String frontendUrl;
 //b6
 
