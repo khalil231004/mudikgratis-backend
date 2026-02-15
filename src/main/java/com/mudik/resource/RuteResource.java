@@ -18,7 +18,7 @@ import java.util.stream.Collectors;
 public class RuteResource {
 
     // ==========================================
-    // 1. PUBLIC API (Untuk User & Dropdown Admin)
+    // 1. PUBLIC API (Bebas Akses - Sesuai Properties)
     // ==========================================
 
     @GET
@@ -31,18 +31,16 @@ public class RuteResource {
             map.put("rute_id", r.rute_id);
             map.put("asal", r.asal);
             map.put("tujuan", r.tujuan);
-
-            // Raw Date untuk Form Edit Admin
             map.put("tanggal_raw", r.tanggal_keberangkatan);
-            // Formatted Date untuk Tampilan Tabel/User
             map.put("waktu_berangkat", r.getFormattedDate());
 
-            // Info Kuota Realtime
+            // 🔥 LOGIKA KUOTA: Ini Kuota GLOBAL Rute (Bukan Bus)
+            // User daftar masuk ke sini dulu. Bus diurus Admin belakangan.
             map.put("kuota_total", r.kuota_total);
             map.put("kuota_terisi", r.kuota_terisi);
-            map.put("kuota_fix", r.kuota_fix);
-            map.put("kuota_tersisa", r.getSisaKuota()); // Pakai Helper
+            map.put("kuota_tersisa", r.getSisaKuota());
 
+            // Status Seat buat Frontend
             boolean isPenuh = (r.getSisaKuota() <= 0);
             map.put("status_seat", isPenuh ? "HABIS" : "TERSEDIA");
 
@@ -61,19 +59,22 @@ public class RuteResource {
     }
 
     // ==========================================
-    // 2. ADMIN API (Create, Update, Delete)
+    // 2. ADMIN API (Create, Update, Delete - BUTUH TOKEN)
     // ==========================================
 
     @POST
     @Transactional
-    @RolesAllowed("ADMIN")
+    @RolesAllowed("ADMIN") // Wajib Admin
     public Response createRute(Rute ruteBaru) {
         if (ruteBaru.asal == null || ruteBaru.tujuan == null) {
             return Response.status(400).entity(Map.of("error", "Asal dan Tujuan wajib diisi")).build();
         }
 
-        // Default Kuota 0 jika tidak diisi
+        // Logic: Admin set total kuota tiket yang tersedia untuk rute ini
+        // Tidak peduli bus-nya apa, yang penting limit tiketnya segini.
         if(ruteBaru.kuota_total == null) ruteBaru.kuota_total = 0;
+
+        // Reset counter
         ruteBaru.kuota_terisi = 0;
         ruteBaru.kuota_fix = 0;
 
@@ -81,7 +82,7 @@ public class RuteResource {
 
         return Response.status(201).entity(Map.of(
                 "status", "BERHASIL",
-                "message", "Rute ke " + ruteBaru.tujuan + " berhasil dibuat."
+                "message", "Rute ke " + ruteBaru.tujuan + " berhasil dibuat dengan kuota " + ruteBaru.kuota_total
         )).build();
     }
 
@@ -93,18 +94,20 @@ public class RuteResource {
         Rute rute = Rute.findById(id);
         if (rute == null) return Response.status(404).entity(Map.of("error", "Rute tidak ditemukan")).build();
 
-        // Update Field
+        // Update Info Dasar
         rute.asal = dataBaru.asal;
         rute.tujuan = dataBaru.tujuan;
         rute.tanggal_keberangkatan = dataBaru.tanggal_keberangkatan;
 
-        // Admin boleh manual override kuota total jika perlu
+        // 🔥 LOGIC UPDATE KUOTA:
+        // Admin bisa nambah/kurang kuota total kapan aja.
+        // TAPI jangan reset 'kuota_terisi' karena itu data real pendaftar!
         if(dataBaru.kuota_total != null) {
             rute.kuota_total = dataBaru.kuota_total;
         }
 
         rute.persist();
-        return Response.ok(Map.of("status", "BERHASIL", "message", "Data rute diupdate")).build();
+        return Response.ok(Map.of("status", "BERHASIL", "message", "Data rute & kuota diperbarui")).build();
     }
 
     @DELETE
@@ -112,11 +115,15 @@ public class RuteResource {
     @Transactional
     @RolesAllowed("ADMIN")
     public Response deleteRute(@PathParam("id") Long id) {
-        boolean deleted = Rute.deleteById(id);
-        if(deleted) {
-            return Response.ok(Map.of("status", "BERHASIL", "message", "Rute dihapus")).build();
-        } else {
-            return Response.status(404).entity(Map.of("error", "Gagal hapus, data tidak ada")).build();
+        // Cek apakah ada pendaftar? Kalau ada jangan dihapus sembarangan
+        Rute rute = Rute.findById(id);
+        if (rute == null) return Response.status(404).build();
+
+        if (rute.kuota_terisi > 0) {
+            return Response.status(400).entity(Map.of("error", "Gagal hapus! Masih ada " + rute.kuota_terisi + " pendaftar di rute ini.")).build();
         }
+
+        rute.delete();
+        return Response.ok(Map.of("status", "BERHASIL", "message", "Rute dihapus")).build();
     }
 }
