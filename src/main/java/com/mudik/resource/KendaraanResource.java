@@ -2,7 +2,6 @@ package com.mudik.resource;
 
 import com.mudik.model.Kendaraan;
 import com.mudik.model.Rute;
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
@@ -14,7 +13,6 @@ import java.util.Map;
 @Path("/api/admin/kendaraan")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
-@RolesAllowed("ADMIN")
 public class KendaraanResource {
 
     // --- 1. TAMBAH BUS BARU KE RUTE ---

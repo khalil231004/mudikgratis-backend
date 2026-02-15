@@ -1,7 +1,6 @@
 package com.mudik.resource;
 
 import com.mudik.model.Rute;
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
@@ -64,7 +63,6 @@ public class RuteResource {
 
     @POST
     @Transactional
-    @RolesAllowed("ADMIN") // Wajib Admin
     public Response createRute(Rute ruteBaru) {
         if (ruteBaru.asal == null || ruteBaru.tujuan == null) {
             return Response.status(400).entity(Map.of("error", "Asal dan Tujuan wajib diisi")).build();
@@ -89,7 +87,6 @@ public class RuteResource {
     @PUT
     @Path("/{id}")
     @Transactional
-    @RolesAllowed("ADMIN")
     public Response updateRute(@PathParam("id") Long id, Rute dataBaru) {
         Rute rute = Rute.findById(id);
         if (rute == null) return Response.status(404).entity(Map.of("error", "Rute tidak ditemukan")).build();
@@ -113,7 +110,6 @@ public class RuteResource {
     @DELETE
     @Path("/{id}")
     @Transactional
-    @RolesAllowed("ADMIN")
     public Response deleteRute(@PathParam("id") Long id) {
         // Cek apakah ada pendaftar? Kalau ada jangan dihapus sembarangan
         Rute rute = Rute.findById(id);
