@@ -12,14 +12,17 @@ public class WhatsAppService {
     @ConfigProperty(name = "app.frontend.url")
     String frontendUrl;
 
-    public String generateLink(String noHp, String tipe, PendaftaranMudik p) {
+    /**
+     * @param noHp Nomor tujuan
+     * @param tipe Tipe pesan (TERIMA, TOLAK_DATA, DITERIMA(H-3))
+     * @param p Objek pendaftaran
+     * @param alasan Alasan penolakan (diisi jika tipe adalah TOLAK_DATA)
+     */
+    public String generateLink(String noHp, String tipe, PendaftaranMudik p, String alasan) {
         if (noHp == null || noHp.length() < 7) return "#";
 
         String hpFormat = noHp.replaceAll("[^0-9]", "");
         if (hpFormat.startsWith("0")) hpFormat = "62" + hpFormat.substring(1);
-
-        // 🔥 LOGIC UUID: Pake UUID, kalau null pake string default
-        String uuidSafe = (p.uuid != null && !p.uuid.isEmpty()) ? p.uuid : "ERROR-UUID-NULL";
 
         String pesan = "";
         String linkAction = "";
@@ -35,16 +38,19 @@ public class WhatsAppService {
                     break;
 
                 case "TOLAK_DATA":
+                    // Menggunakan variabel alasan yang dikirim dari Service
+                    String alasanFinal = (alasan != null && !alasan.isBlank()) ? alasan : "Data tidak memenuhi syarat verifikasi.";
                     pesan = "Mohon Maaf Sdr/i *" + p.nama_peserta + "*,\n\n" +
-                            "Pendaftaran Mudik Gratis Anda *TIDAK LOLOS VERIFIKASI*.";
+                            "Pendaftaran Mudik Gratis Anda *DITOLAK* dengan alasan:\n" +
+                            "👉 *" + alasanFinal + "*\n\n" +
+                            "Silakan login kembali untuk memperbaiki data:";
                     linkAction = frontendUrl + "/login";
                     break;
 
-                // 🔥 GANTI JADI TERVERIFIKASI BIAR SINKRON SAMA DB/CURL
                 case "DITERIMA(H-3)":
                     pesan = "⚠️ *KONFIRMASI KEHADIRAN (H-3)* ⚠️\n\n" +
                             "Halo Sdr/i *" + p.nama_peserta + "*,\n" +
-                            "Mohon klik link untuk konfirmasi keberangkatan: ";
+                            "Mohon klik link berikut untuk konfirmasi keberangkatan: ";
                     linkAction = frontendUrl + "/konfirmasi/" + p.uuid;
                     break;
 
@@ -54,12 +60,11 @@ public class WhatsAppService {
                     break;
             }
 
-
             String fullMessage = pesan + "\n" + linkAction;
             return "https://wa.me/" + hpFormat + "?text=" + URLEncoder.encode(fullMessage, StandardCharsets.UTF_8.toString());
 
         } catch (Exception e) {
-            e.printStackTrace();
+            System.err.println("Gagal generate link WA: " + e.getMessage());
             return "#";
         }
     }

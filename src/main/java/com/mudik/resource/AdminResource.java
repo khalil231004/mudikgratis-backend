@@ -4,7 +4,7 @@ import com.mudik.model.Kendaraan;
 import com.mudik.model.PendaftaranMudik;
 import com.mudik.model.Rute;
 import com.mudik.service.ExcelService;
-import com.mudik.service.PendaftaranService; // 🔥 Inject Service buat Kuota
+import com.mudik.service.PendaftaranService;
 import com.mudik.service.WhatsAppService;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
@@ -31,10 +31,10 @@ public class AdminResource {
     WhatsAppService waService;
 
     @Inject
-    PendaftaranService pendaftaranService; // 🔥 Inject Service logic
+    PendaftaranService pendaftaranService; // 🔥 Inject Service Logic Utama
 
     // =================================================================
-    // 1. DASHBOARD & DATA PENDAFTAR (AMAN - Kode Lama + Logic WA)
+    // 1. DASHBOARD & DATA PENDAFTAR (Full Info + Link WA)
     // =================================================================
     @GET
     @Path("/pendaftar")
@@ -51,12 +51,14 @@ public class AdminResource {
 
             // Data Dasar
             map.put("id", p.pendaftaran_id);
+            map.put("uuid", p.uuid); // 🔥 Penting buat Frontend Link
             map.put("nama_peserta", p.nama_peserta);
             map.put("nik_peserta", p.nik_peserta);
             map.put("jenis_kelamin", p.jenis_kelamin);
             map.put("kategori", (p.kategori_penumpang != null) ? p.kategori_penumpang : "");
             map.put("status", (p.status_pendaftaran != null) ? p.status_pendaftaran : "UNKNOWN");
             map.put("kode_booking", (p.kode_booking != null) ? p.kode_booking : "-");
+            map.put("alasan_tolak", (p.alasan_tolak != null) ? p.alasan_tolak : "-"); // 🔥 Tampilkan alasan di tabel
 
             // Grouping Keluarga
             map.put("id_keluarga", (p.user != null) ? p.user.user_id : 0);
@@ -78,10 +80,11 @@ public class AdminResource {
                 map.put("foto_bukti", "/uploads/" + new File(p.foto_identitas_path).getName());
             }
 
-            // 🔥 LINK WA PAKAI SERVICE
-            map.put("link_wa_terima", waService.generateLink(targetHp, "DITERIMA H-3", p)); // Sesuaikan Status
-            map.put("link_wa_tolak", waService.generateLink(targetHp, "DITOLAK", p));
-            // map.put("link_wa_verif", waService.generateLink(targetHp, "VERIFIKASI", p)); // Opsional
+            // 🔥 LINK WA (Generate Preview)
+            // Parameter generateLink sekarang butuh (NoHP, Tipe, ObjekPendaftaran, Alasan)
+            map.put("link_wa_terima", waService.generateLink(targetHp, "TERIMA", p, null));
+            map.put("link_wa_tolak", waService.generateLink(targetHp, "TOLAK_DATA", p, "Data tidak valid (Preview)"));
+            map.put("link_wa_h3", waService.generateLink(targetHp, "DITERIMA(H-3)", p, null));
 
             return map;
         }).collect(Collectors.toList());
@@ -90,53 +93,47 @@ public class AdminResource {
     }
 
     // =================================================================
-    // 2. VERIFIKASI KELUARGA (UPDATE LOGIC - FIX POIN 2 & 3)
+    // 2. VERIFIKASI KELUARGA (LOGIC BARU - FIX POIN 2 & 3)
     // =================================================================
     @PUT
     @Path("/verifikasi-keluarga/{userId}")
-    @Transactional
     public Response verifikasiKeluarga(@PathParam("userId") Long userId, Map<String, String> body) {
-        String aksi = body.get("status"); // TERIMA, TOLAK
-        if (aksi == null) return Response.status(400).entity(Map.of("error", "Status wajib diisi")).build();
+        try {
+            String aksi = body.get("status"); // TERIMA, TOLAK
+            String alasan = body.get("alasan_tolak"); // Alasan dari Admin Frontend
 
-        List<PendaftaranMudik> keluarga = PendaftaranMudik.list("user.user_id", userId);
-        if (keluarga.isEmpty()) return Response.status(404).entity(Map.of("error", "Data keluarga tidak ditemukan")).build();
+            if (aksi == null) return Response.status(400).entity(Map.of("error", "Status wajib diisi")).build();
 
-        int count = 0;
+            String linkWa = "";
 
-        for (PendaftaranMudik p : keluarga) {
-
-            // --- KASUS TOLAK (Fix Poin 2: Kuota Balik) ---
+            // --- KASUS TOLAK (Fix Poin 2: Kuota Balik + Alasan) ---
             if (aksi.contains("TOLAK") || "DITOLAK".equals(aksi)) {
 
-                // Panggil Service buat Handle Status & Kuota
-                pendaftaranService.adminTolakPeserta(p.pendaftaran_id);
-                count++;
+                // Panggil Service Atomic (Logic Maharaja)
+                linkWa = pendaftaranService.tolakPendaftaranKeluarga(userId, alasan);
 
-                // --- KASUS TERIMA (Fix Poin 3: Filter Status) ---
-            } else if (aksi.contains("TERIMA") || "VERIFIKASI".equals(aksi)) {
-
-                // Cuma ACC yang statusnya MENUNGGU
-                if ("MENUNGGU VERIFIKASI".equals(p.status_pendaftaran)) {
-                    p.status_pendaftaran = "DITERIMA H-3"; // Status FIX
-                    p.persist();
-
-                    // Generate Link WA (Log only)
-                    waService.generateLink(p.no_hp_peserta, "DITERIMA H-3", p);
-                    count++;
-                }
-                // Yang DITOLAK akan di-skip (Aman)
             }
-        }
+            // --- KASUS TERIMA / H-3 (Fix Poin 3: Filter Status) ---
+            else if (aksi.contains("TERIMA") || "DITERIMA H-3".equals(aksi)) {
 
-        return Response.ok(Map.of(
-                "status", "BERHASIL",
-                "pesan", count + " data berhasil diproses (Skip data DITOLAK/BATAL)."
-        )).build();
+                // Panggil Service Update Status Keluarga
+                linkWa = pendaftaranService.updateStatusKeluarga(userId, "DITERIMA H-3", null);
+            }
+
+            return Response.ok(Map.of(
+                    "status", "BERHASIL",
+                    "pesan", "Data keluarga berhasil diproses.",
+                    "link_wa", linkWa // Kembalikan Link WA biar Frontend bisa auto-open
+            )).build();
+
+        } catch (Exception e) {
+            // Tangkap error logic (misal kuota habis) dan kirim ke frontend
+            return Response.status(400).entity(Map.of("error", e.getMessage())).build();
+        }
     }
 
     // =================================================================
-    // 3. PLOTTING BUS (AMAN - KODE LAMA LU TETAP ADA)
+    // 3. PLOTTING BUS (AMAN - KODE LAMA TETAP JALAN)
     // =================================================================
     @POST
     @Path("/assign-bus")
@@ -146,7 +143,7 @@ public class AdminResource {
         Kendaraan busBaru = Kendaraan.findById(kendaraanId);
         if (busBaru == null) return Response.status(404).entity(Map.of("error", "Bus tidak ditemukan")).build();
 
-        // 2. Cek Status Wajib TERVERIFIKASI/ SIAP BERANGKAT (Sesuai status baru)
+        // 2. Cek Status Wajib TERVERIFIKASI/ SIAP BERANGKAT
         List<PendaftaranMudik> keluarga = PendaftaranMudik.list("user.user_id = ?1 AND status_pendaftaran = 'TERVERIFIKASI/ SIAP BERANGKAT'", userId);
 
         if (keluarga.isEmpty()) {
@@ -157,25 +154,17 @@ public class AdminResource {
             return Response.status(400).entity(Map.of("error", "Data tidak ditemukan atau belum SIAP.")).build();
         }
 
-        // 3. Cek Kapasitas
+        // 3. Cek Kapasitas Bus
         if (busBaru.terisi + keluarga.size() > busBaru.kapasitas_total) {
             return Response.status(400).entity(Map.of("error", "Bus Penuh! Sisa: " + (busBaru.kapasitas_total - busBaru.terisi))).build();
         }
 
         // 4. Proses Plotting / Pindah Bus
         for (PendaftaranMudik p : keluarga) {
-            // Pindah Bus (Swap Logic)
-            if (p.kendaraan != null) {
-                if (!p.kendaraan.id.equals(busBaru.id)) {
-                    p.kendaraan.terisi -= 1;
-                    p.kendaraan.persist();
-                } else {
-                    continue; // Bus sama, skip
-                }
-            } else {
-                // Baru dapet bus pertama kali -> Update Kuota FIX (Opsional kalau ada field ini)
-                // if (p.rute.kuota_fix == null) p.rute.kuota_fix = 0;
-                // p.rute.kuota_fix += 1;
+            // Jika pindah dari bus lain, kurangi bus lama
+            if (p.kendaraan != null && !p.kendaraan.id.equals(busBaru.id)) {
+                p.kendaraan.terisi -= 1;
+                p.kendaraan.persist();
             }
 
             p.kendaraan = busBaru;
@@ -197,25 +186,31 @@ public class AdminResource {
         long totalDiterima = PendaftaranMudik.count("status_pendaftaran = 'DITERIMA H-3'"); // Fix Status
         long totalSiap = PendaftaranMudik.count("status_pendaftaran = 'TERVERIFIKASI/ SIAP BERANGKAT'"); // Fix Status
 
+        long totalDitolak = PendaftaranMudik.count("status_pendaftaran = 'DITOLAK'"); // Info tambahan
+
         List<Rute> rutes = Rute.listAll();
-        long sisaKuota = rutes.stream().mapToLong(Rute::getSisaKuota).sum();
+        long sisaKuotaGlobal = 0;
+
+        // Hitung sisa kuota yang akurat dari method Model
+        for(Rute r : rutes) {
+            sisaKuotaGlobal += r.getSisaKuota();
+        }
 
         List<Map<String, Object>> statsRute = rutes.stream().map(rute -> {
-            // Hitung Terisi (Kecuali Ditolak/Batal)
-            long terisi = PendaftaranMudik.count("rute.rute_id = ?1 AND status_pendaftaran != 'DIBATALKAN' AND status_pendaftaran != 'DITOLAK'", rute.rute_id);
             Map<String, Object> map = new HashMap<>();
             map.put("tujuan", rute.tujuan);
             map.put("sisa_kuota", rute.getSisaKuota());
-            map.put("terisi", terisi);
+            map.put("terisi", (rute.kuota_terisi != null ? rute.kuota_terisi : 0));
             map.put("total_kursi", rute.kuota_total);
             return map;
-        }).toList();
+        }).collect(Collectors.toList());
 
         return Response.ok(Map.of(
                 "total_masuk", totalPendaftar,
                 "total_diterima", totalDiterima,
                 "total_siap", totalSiap,
-                "sisa_kuota_global", sisaKuota,
+                "total_ditolak", totalDitolak,
+                "sisa_kuota_global", sisaKuotaGlobal,
                 "detail_rute", statsRute
         )).build();
     }

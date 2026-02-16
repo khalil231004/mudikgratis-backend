@@ -37,6 +37,7 @@ public class PendaftaranMudik extends PanacheEntityBase {
     @NotBlank(message = "NIK wajib 16 digit")
     public String nik_peserta;
 
+    public String alasan_tolak;
     public String no_hp_peserta;
     public String jenis_kelamin;
     public LocalDate tanggal_lahir;
@@ -77,7 +78,7 @@ public class PendaftaranMudik extends PanacheEntityBase {
             created_at = LocalDateTime.now();
         }
         if (status_pendaftaran == null) {
-            status_pendaftaran = "MENUNGGU_VERIFIKASI";
+            status_pendaftaran = "MENUNGGU VERIFIKASI";
         }
     }
 }
