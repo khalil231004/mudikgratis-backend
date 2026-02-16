@@ -99,8 +99,6 @@ public class BotPendaftaranService {
             // Handle optional lists (biar gak IndexOutOfBounds kalau list kosong/null)
             if (listIdentitas != null && listIdentitas.size() > i) p.jenis_identitas = listIdentitas.get(i);
             if (listPathBukti != null && listPathBukti.size() > i) p.foto_identitas_path = listPathBukti.get(i);
-            if (listJenisBarang != null && listJenisBarang.size() > i) p.jenis_barang = listJenisBarang.get(i);
-            if (listUkuran != null && listUkuran.size() > i) p.ukuran_barang = listUkuran.get(i);
             if (listAlamat != null && listAlamat.size() > i) p.alamat_rumah = listAlamat.get(i);
 
             // Logic HP

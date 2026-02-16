@@ -56,8 +56,6 @@ public class PendaftaranMudik extends PanacheEntityBase {
     // Barang & Lainnya
     public String jenis_identitas;
     public String foto_identitas_path;
-    public String jenis_barang;
-    public String ukuran_barang;
     public String alamat_rumah;
     public String kode_booking;
 

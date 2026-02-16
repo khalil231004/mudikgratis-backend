@@ -29,8 +29,6 @@ public class PendaftaranResource {
         @RestForm("jenis_kelamin") public List<String> jenis_kelamin;
         @RestForm("tanggal_lahir") public List<String> tanggal_lahir;
         @RestForm("jenis_identitas") public List<String> jenis_identitas;
-        @RestForm("jenis_barang") public List<String> jenis_barang;
-        @RestForm("ukuran_barang") public List<String> ukuran_barang;
         @RestForm("alamat_rumah") public List<String> alamat_rumah;
         @RestForm("no_hp_peserta") public List<String> no_hp_peserta;
         @RestForm("fotoBukti") public List<FileUpload> fotoBukti;

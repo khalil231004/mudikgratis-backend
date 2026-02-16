@@ -74,9 +74,6 @@ public class TiketService {
 
         addCell(table, "Alamat Domisili", pendaftar.alamat_rumah);
 
-        String infoBarang = (pendaftar.jenis_barang != null ? pendaftar.jenis_barang : "Tidak Bawa Barang")
-                + " (" + (pendaftar.ukuran_barang != null ? pendaftar.ukuran_barang : "-") + ")";
-        addCell(table, "Barang Bawaan", infoBarang);
 
         document.add(table);
 
