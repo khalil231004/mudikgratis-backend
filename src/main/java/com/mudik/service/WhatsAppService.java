@@ -34,7 +34,7 @@ public class WhatsAppService {
                             "Selamat! Pendaftaran Mudik Gratis Anda telah *DITERIMA*.\n" +
                             "Kode Booking: *" + p.kode_booking + "*\n\n" +
                             "Silakan cek tiket Anda di sini: ";
-                    linkAction = frontendUrl + "/status/" + p.uuid;
+                    linkAction = frontendUrl + "/login";
                     break;
 
                 case "TOLAK_DATA":
