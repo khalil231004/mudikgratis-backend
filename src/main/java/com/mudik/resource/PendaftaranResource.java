@@ -22,7 +22,7 @@ public class PendaftaranResource {
     @Inject
     PendaftaranService pendaftaranService;
 
-    // DTO Wrapper (Sesuai kode lama + field lengkap)
+    // DTO Wrapper
     public static class PendaftaranMultipartForm {
         @RestForm("nama_peserta") public List<String> nama_peserta;
         @RestForm("nik_peserta") public List<String> nik_peserta;
@@ -36,45 +36,74 @@ public class PendaftaranResource {
         @RestForm("fotoBukti") public List<FileUpload> fotoBukti;
     }
 
-    // 1. GET RIWAYAT (AMAN - Kode Lama)
+    // ==========================================
+    // 🔥 HELPER SAKTI: RESOLVE USER ID (FIX 404)
+    // ==========================================
+    private Long resolveUserId(String idStr) {
+        if (idStr == null || idStr.isEmpty() || "undefined".equals(idStr)) {
+            throw new WebApplicationException("User ID tidak valid/kosong", 400);
+        }
+        try {
+            // Cek apakah ini Angka (ID lama)
+            return Long.parseLong(idStr);
+        } catch (NumberFormatException e) {
+            // Kalau bukan angka, berarti UUID. Cari user berdasarkan UUID Pendaftaran
+            PendaftaranMudik p = PendaftaranMudik.find("uuid", idStr).firstResult();
+            if (p != null) {
+                return p.user.user_id;
+            }
+
+            // Opsional: Kalau User entity punya field uuid, cari disana juga
+            // User u = User.find("uuid", idStr).firstResult();
+            // if (u != null) return u.user_id;
+
+            throw new WebApplicationException("Data User tidak ditemukan untuk UUID: " + idStr, 404);
+        }
+    }
+
+    // 1. GET RIWAYAT (FIX: Terima String, Convert di dalam)
     @GET
     @Path("/riwayat")
     @Produces(MediaType.APPLICATION_JSON)
-    public Response riwayatPendaftaran(@HeaderParam("userId") Long userId) {
-        if (userId == null) return Response.status(401).entity(Map.of("error", "Unauthorized")).build();
+    public Response riwayatPendaftaran(@HeaderParam("userId") String userIdStr) {
+        try {
+            Long userId = resolveUserId(userIdStr); // 🔥 Auto-convert
 
-        List<PendaftaranMudik> list = PendaftaranMudik.list("user.user_id = ?1 ORDER BY created_at DESC", userId);
-        List<Map<String, Object>> result = new ArrayList<>();
+            List<PendaftaranMudik> list = PendaftaranMudik.list("user.user_id = ?1 ORDER BY created_at DESC", userId);
+            List<Map<String, Object>> result = new ArrayList<>();
 
-        for (PendaftaranMudik p : list) {
-            Map<String, Object> map = new HashMap<>();
-            map.put("pendaftaran_id", p.pendaftaran_id);
-            map.put("kode_booking", p.kode_booking != null ? p.kode_booking : "-");
-            map.put("status_pendaftaran", p.status_pendaftaran);
-            map.put("nama_peserta", p.nama_peserta);
+            for (PendaftaranMudik p : list) {
+                Map<String, Object> map = new HashMap<>();
+                map.put("pendaftaran_id", p.pendaftaran_id);
+                map.put("uuid", p.uuid); // Penting buat frontend
+                map.put("kode_booking", p.kode_booking != null ? p.kode_booking : "-");
+                map.put("status_pendaftaran", p.status_pendaftaran);
+                map.put("nama_peserta", p.nama_peserta);
+                map.put("nik_peserta", p.nik_peserta);
+                map.put("alasan_tolak", p.alasan_tolak != null ? p.alasan_tolak : "-");
 
-            // Tambahan info buat Frontend Edit
-            map.put("nik_peserta", p.nik_peserta);
-            map.put("alasan_tolak", "Silakan perbaiki data dan upload ulang KTP."); // Pesan default
+                if (p.rute != null) {
+                    map.put("tujuan", p.rute.tujuan);
+                    map.put("tanggal_keberangkatan", p.rute.getFormattedDate());
+                } else { map.put("tujuan", "-"); }
 
-            if (p.rute != null) {
-                map.put("tujuan", p.rute.tujuan);
-                map.put("tanggal_keberangkatan", p.rute.getFormattedDate());
-            } else { map.put("tujuan", "-"); }
-
-            map.put("nama_bus", (p.kendaraan != null) ? p.kendaraan.nama_armada : "Menunggu Plotting");
-            result.add(map);
+                map.put("nama_bus", (p.kendaraan != null) ? p.kendaraan.nama_armada : "Menunggu Plotting");
+                result.add(map);
+            }
+            return Response.ok(result).build();
+        } catch (Exception e) {
+            return Response.status(400).entity(Map.of("error", e.getMessage())).build();
         }
-        return Response.ok(result).build();
     }
 
-    // 2. POST DAFTAR (Panggil Service - AMAN)
+    // 2. POST DAFTAR (FIX: Terima String)
     @POST
     @Consumes(MediaType.MULTIPART_FORM_DATA)
     @Produces(MediaType.APPLICATION_JSON)
-    public Response daftarBatch(@HeaderParam("userId") Long userId, @QueryParam("rute_id") Long ruteId, PendaftaranMultipartForm form) {
+    public Response daftarBatch(@HeaderParam("userId") String userIdStr, @QueryParam("rute_id") Long ruteId, PendaftaranMultipartForm form) {
         try {
-            if (userId == null) return Response.status(400).entity(Map.of("error", "Login dulu!")).build();
+            Long userId = resolveUserId(userIdStr); // 🔥 Auto-convert
+
             if (ruteId == null) return Response.status(400).entity(Map.of("error", "Pilih rute!")).build();
             if (form.nama_peserta == null || form.nama_peserta.isEmpty()) return Response.status(400).entity(Map.of("error", "Peserta kosong!")).build();
 
@@ -82,7 +111,6 @@ public class PendaftaranResource {
             Rute rute = Rute.findById(ruteId);
             if (user == null || rute == null) return Response.status(404).entity(Map.of("error", "Data tidak valid")).build();
 
-            // 🔥 LOGIC SERVICE (Validasi NIK, Kuota, Upload)
             pendaftaranService.prosesPendaftaranWeb(user, rute, form);
 
             return Response.ok(Map.of("status", "BERHASIL", "pesan", form.nama_peserta.size() + " peserta terdaftar!")).build();
@@ -91,19 +119,20 @@ public class PendaftaranResource {
         }
     }
 
-    // 3. PUT KONFIRMASI (AMAN - Sesuai Frontend Lama)
+    // 3. PUT KONFIRMASI (FIX: PathParam String userIdStr -> Long)
     @PUT
     @Path("/konfirmasi-kehadiran/{userId}")
-    public Response konfirmasiKehadiran(@PathParam("userId") Long userId, Map<String, List<Long>> body) {
+    public Response konfirmasiKehadiran(@PathParam("userId") String userIdStr, Map<String, List<Long>> body) {
         try {
-            // Pastikan key-nya "ids_konfirmasi" sesuai dengan Konfirmasi.tsx
+            // 🔥 INI FIX UTAMANYA: Terima String -> Cari ID Asli -> Proses
+            Long userId = resolveUserId(userIdStr);
+
             List<Long> ids = body.get("ids_konfirmasi");
             if (ids == null) {
-                return Response.status(400).entity(Map.of("error", "Data 'ids_konfirmasi' tidak ditemukan di body")).build();
+                return Response.status(400).entity(Map.of("error", "Data 'ids_konfirmasi' tidak ditemukan")).build();
             }
-            // Panggil Service untuk ubah status jadi TERVERIFIKASI/SIAP BERANGKAT
-            String pesan = pendaftaranService.prosesKonfirmasi(userId, ids);
 
+            String pesan = pendaftaranService.prosesKonfirmasi(userId, ids);
             return Response.ok(Map.of("status", "BERHASIL", "message", pesan)).build();
         } catch (Exception e) {
             e.printStackTrace();
@@ -111,22 +140,21 @@ public class PendaftaranResource {
         }
     }
 
-    // 4. PUT PERBAIKI DATA (ENDPOINT BARU - FIX POIN 1 & 11)
+    // 4. PUT PERBAIKI DATA (FIX: Header String)
     @PUT
     @Path("/perbaiki-data/{pendaftaranId}")
     @Consumes(MediaType.MULTIPART_FORM_DATA)
     public Response perbaikiData(@PathParam("pendaftaranId") Long pendaftaranId,
-                                 @HeaderParam("userId") Long userId,
+                                 @HeaderParam("userId") String userIdStr,
                                  PendaftaranMultipartForm form) {
         try {
-            if (userId == null) return Response.status(401).entity(Map.of("error", "UserId header missing")).build();
+            Long userId = resolveUserId(userIdStr); // 🔥 Auto-convert
 
-            // Panggil Service Edit (Reset ke MENUNGGU VERIFIKASI & Ambil Kuota Lagi)
             pendaftaranService.editPendaftaran(userId, pendaftaranId, form);
 
             return Response.ok(Map.of(
                     "status", "BERHASIL",
-                    "pesan", "Data berhasil diperbaiki dan diajukan kembali. Menunggu Verifikasi."
+                    "pesan", "Data berhasil diperbaiki. Menunggu Verifikasi."
             )).build();
         } catch (Exception e) {
             return Response.status(400).entity(Map.of("error", e.getMessage())).build();
