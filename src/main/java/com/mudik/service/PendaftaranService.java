@@ -231,7 +231,7 @@ public class PendaftaranService {
         return whatsAppService.generateLink(keluarga.get(0).no_hp_peserta, "TOLAK_DATA", keluarga.get(0), alasan);
     }
 
-    // HELPER UPLOAD
+    // HELPER UPLOAD nya
     private String uploadFileHelper(FileUpload fileUpload, String nik) throws IOException {
         File folder = new File(uploadDir);
         if (!folder.exists()) folder.mkdirs();
