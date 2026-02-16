@@ -24,17 +24,12 @@ import java.util.stream.Collectors;
 @Consumes(MediaType.APPLICATION_JSON)
 public class AdminResource {
 
-    @Inject
-    ExcelService excelService;
-
-    @Inject
-    WhatsAppService waService;
-
-    @Inject
-    PendaftaranService pendaftaranService; // 🔥 Inject Service Logic Utama
+    @Inject ExcelService excelService;
+    @Inject WhatsAppService waService;
+    @Inject PendaftaranService pendaftaranService;
 
     // =================================================================
-    // 1. DASHBOARD & DATA PENDAFTAR (Full Info + Link WA)
+    // 1. DASHBOARD & DATA PENDAFTAR
     // =================================================================
     @GET
     @Path("/pendaftar")
@@ -48,40 +43,31 @@ public class AdminResource {
 
         List<Map<String, Object>> result = list.stream().map(p -> {
             Map<String, Object> map = new HashMap<>();
-
-            // Data Dasar
             map.put("id", p.pendaftaran_id);
-            map.put("uuid", p.uuid); // 🔥 Penting buat Frontend Link
+            // 🔥 FIX NO 6: Kirim UUID ke Frontend (Pastikan DB sudah di-update)
+            map.put("uuid", (p.uuid != null) ? p.uuid : "");
             map.put("nama_peserta", p.nama_peserta);
             map.put("nik_peserta", p.nik_peserta);
             map.put("jenis_kelamin", p.jenis_kelamin);
             map.put("kategori", (p.kategori_penumpang != null) ? p.kategori_penumpang : "");
             map.put("status", (p.status_pendaftaran != null) ? p.status_pendaftaran : "UNKNOWN");
             map.put("kode_booking", (p.kode_booking != null) ? p.kode_booking : "-");
-            map.put("alasan_tolak", (p.alasan_tolak != null) ? p.alasan_tolak : "-"); // 🔥 Tampilkan alasan di tabel
+            map.put("alasan_tolak", (p.alasan_tolak != null) ? p.alasan_tolak : "-");
 
-            // Grouping Keluarga
             map.put("id_keluarga", (p.user != null) ? p.user.user_id : 0);
             map.put("nama_kepala_keluarga", (p.user != null) ? p.user.nama_lengkap : "Tanpa Akun");
-
-            // Data Rute & Bus
             map.put("rute_tujuan", (p.rute != null) ? p.rute.tujuan : "Unknown");
             map.put("tgl_berangkat", (p.rute != null) ? p.rute.getFormattedDate() : "-");
             map.put("nama_bus", (p.kendaraan != null) ? p.kendaraan.nama_armada : "Belum Plotting");
-            map.put("plat_nomor", (p.kendaraan != null) ? p.kendaraan.plat_nomor : "-");
-            map.put("titik_jemput", (p.alamat_rumah != null) ? p.alamat_rumah : "-");
 
-            // Logic HP & Foto
-            String targetHp = (p.no_hp_peserta != null && p.no_hp_peserta.length() > 5)
-                    ? p.no_hp_peserta : ((p.user != null) ? p.user.no_hp : "");
+            String targetHp = (p.no_hp_peserta != null && p.no_hp_peserta.length() > 5) ? p.no_hp_peserta : ((p.user != null) ? p.user.no_hp : "");
             map.put("no_hp_target", targetHp);
 
             if (p.foto_identitas_path != null) {
                 map.put("foto_bukti", "/uploads/" + new File(p.foto_identitas_path).getName());
             }
 
-            // 🔥 LINK WA (Generate Preview)
-            // Parameter generateLink sekarang butuh (NoHP, Tipe, ObjekPendaftaran, Alasan)
+            // Link WA Preview
             map.put("link_wa_terima", waService.generateLink(targetHp, "TERIMA", p, null));
             map.put("link_wa_tolak", waService.generateLink(targetHp, "TOLAK_DATA", p, "Data tidak valid (Preview)"));
             map.put("link_wa_h3", waService.generateLink(targetHp, "DITERIMA(H-3)", p, null));
@@ -93,47 +79,84 @@ public class AdminResource {
     }
 
     // =================================================================
-    // 2. VERIFIKASI KELUARGA (LOGIC BARU - FIX POIN 2 & 3)
+    // 2. VERIFIKASI KELUARGA (BATCH)
     // =================================================================
     @PUT
     @Path("/verifikasi-keluarga/{userId}")
     public Response verifikasiKeluarga(@PathParam("userId") Long userId, Map<String, String> body) {
         try {
-            String aksi = body.get("status"); // TERIMA, TOLAK
-            String alasan = body.get("alasan_tolak"); // Alasan dari Admin Frontend
+            String aksi = body.get("status");
+            String alasan = body.get("alasan_tolak");
 
             if (aksi == null) return Response.status(400).entity(Map.of("error", "Status wajib diisi")).build();
 
             String linkWa = "";
 
-            // --- KASUS TOLAK (Fix Poin 2: Kuota Balik + Alasan) ---
+            // A. KASUS TOLAK (Pakai Service Khusus)
             if (aksi.contains("TOLAK") || "DITOLAK".equals(aksi)) {
-
-                // Panggil Service Atomic (Logic Maharaja)
                 linkWa = pendaftaranService.tolakPendaftaranKeluarga(userId, alasan);
-
             }
-            // --- KASUS TERIMA / H-3 (Fix Poin 3: Filter Status) ---
-            else if (aksi.contains("TERIMA") || "DITERIMA H-3".equals(aksi)) {
-
-                // Panggil Service Update Status Keluarga
-                linkWa = pendaftaranService.updateStatusKeluarga(userId, "DITERIMA H-3", null);
+            // B. KASUS RESET / TERIMA (Pakai Update Status Keluarga)
+            else {
+                // Method ini di Service sudah handle Reset Kuota (Menunggu) dan Terima (H-3)
+                linkWa = pendaftaranService.updateStatusKeluarga(userId, aksi, null);
             }
 
-            return Response.ok(Map.of(
-                    "status", "BERHASIL",
-                    "pesan", "Data keluarga berhasil diproses.",
-                    "link_wa", linkWa // Kembalikan Link WA biar Frontend bisa auto-open
-            )).build();
-
+            return Response.ok(Map.of("status", "BERHASIL", "pesan", "Proses Berhasil", "link_wa", linkWa)).build();
         } catch (Exception e) {
-            // Tangkap error logic (misal kuota habis) dan kirim ke frontend
             return Response.status(400).entity(Map.of("error", e.getMessage())).build();
         }
     }
 
     // =================================================================
-    // 3. PLOTTING BUS (AMAN - KODE LAMA TETAP JALAN)
+    // 3. VERIFIKASI INDIVIDUAL (🔥 FIX ERROR 404 & BATAL/RESET)
+    // =================================================================
+    // Endpoint ini yang sebelumnya HILANG, makanya error 404 saat klik aksi cepat
+    @PUT
+    @Path("/verifikasi/{id}")
+    @Transactional
+    public Response updateIndividual(@PathParam("id") Long id, Map<String, String> body) {
+        try {
+            String statusBaru = body.get("status");
+            PendaftaranMudik p = PendaftaranMudik.findById(id);
+            if (p == null) return Response.status(404).entity(Map.of("error", "Data tidak ditemukan")).build();
+
+            String statusLama = p.status_pendaftaran;
+
+            // --- LOGIC RESET: DARI DITOLAK/BATAL KE MENUNGGU (AMBIL KUOTA) ---
+            if ("MENUNGGU VERIFIKASI".equals(statusBaru) &&
+                    ("DITOLAK".equals(statusLama) || "DIBATALKAN".equals(statusLama))) {
+
+                if (p.rute.getSisaKuota() <= 0) {
+                    return Response.status(400).entity(Map.of("error", "Kuota Rute Penuh, tidak bisa reset data!")).build();
+                }
+                // Ambil Kuota
+                p.rute.kuota_terisi = (p.rute.kuota_terisi == null ? 0 : p.rute.kuota_terisi) + 1;
+                p.alasan_tolak = null;
+            }
+
+            // --- LOGIC BATAL/TOLAK: DARI AKTIF KE BATAL (BALIKIN KUOTA) ---
+            else if (("DIBATALKAN".equals(statusBaru) || "DITOLAK".equals(statusBaru)) &&
+                    (!"DITOLAK".equals(statusLama) && !"DIBATALKAN".equals(statusLama))) {
+
+                // Balikin Kuota (Kecuali Bayi)
+                if (!"BAYI".equalsIgnoreCase(p.kategori_penumpang) && p.rute.kuota_terisi > 0) {
+                    p.rute.kuota_terisi -= 1;
+                }
+            }
+
+            // Update Status
+            p.status_pendaftaran = statusBaru;
+            p.persist();
+
+            return Response.ok(Map.of("status", "BERHASIL", "pesan", "Status peserta diperbarui menjadi " + statusBaru)).build();
+        } catch (Exception e) {
+            return Response.status(400).entity(Map.of("error", e.getMessage())).build();
+        }
+    }
+
+    // =================================================================
+    // 4. PLOTTING BUS
     // =================================================================
     @POST
     @Path("/assign-bus")
@@ -154,19 +177,17 @@ public class AdminResource {
             return Response.status(400).entity(Map.of("error", "Data tidak ditemukan atau belum SIAP.")).build();
         }
 
-        // 3. Cek Kapasitas Bus
+        // 3. Cek Kapasitas
         if (busBaru.terisi + keluarga.size() > busBaru.kapasitas_total) {
             return Response.status(400).entity(Map.of("error", "Bus Penuh! Sisa: " + (busBaru.kapasitas_total - busBaru.terisi))).build();
         }
 
         // 4. Proses Plotting / Pindah Bus
         for (PendaftaranMudik p : keluarga) {
-            // Jika pindah dari bus lain, kurangi bus lama
             if (p.kendaraan != null && !p.kendaraan.id.equals(busBaru.id)) {
                 p.kendaraan.terisi -= 1;
                 p.kendaraan.persist();
             }
-
             p.kendaraan = busBaru;
             busBaru.terisi += 1;
             p.persist();
@@ -177,24 +198,19 @@ public class AdminResource {
     }
 
     // =================================================================
-    // 4. STATISTIK (UPDATE QUERY STATUS - FITUR SAMA)
+    // 5. STATISTIK
     // =================================================================
     @GET
     @Path("/stats")
     public Response getDashboardStats() {
         long totalPendaftar = PendaftaranMudik.count();
-        long totalDiterima = PendaftaranMudik.count("status_pendaftaran = 'DITERIMA H-3'"); // Fix Status
-        long totalSiap = PendaftaranMudik.count("status_pendaftaran = 'TERVERIFIKASI/ SIAP BERANGKAT'"); // Fix Status
-
-        long totalDitolak = PendaftaranMudik.count("status_pendaftaran = 'DITOLAK'"); // Info tambahan
+        long totalDiterima = PendaftaranMudik.count("status_pendaftaran = 'DITERIMA H-3'");
+        long totalSiap = PendaftaranMudik.count("status_pendaftaran = 'TERVERIFIKASI/ SIAP BERANGKAT'");
+        long totalDitolak = PendaftaranMudik.count("status_pendaftaran = 'DITOLAK'");
 
         List<Rute> rutes = Rute.listAll();
         long sisaKuotaGlobal = 0;
-
-        // Hitung sisa kuota yang akurat dari method Model
-        for(Rute r : rutes) {
-            sisaKuotaGlobal += r.getSisaKuota();
-        }
+        for(Rute r : rutes) sisaKuotaGlobal += r.getSisaKuota();
 
         List<Map<String, Object>> statsRute = rutes.stream().map(rute -> {
             Map<String, Object> map = new HashMap<>();
@@ -216,7 +232,7 @@ public class AdminResource {
     }
 
     // =================================================================
-    // 5. EXPORT EXCEL (AMAN - KODE LAMA)
+    // 6. EXPORT EXCEL
     // =================================================================
     @GET
     @Path("/export")
