@@ -4,6 +4,7 @@ import jakarta.inject.Singleton;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import org.eclipse.microprofile.config.inject.ConfigProperty; // 🔥 WAJIB IMPORT INI
 import org.jboss.resteasy.reactive.RestForm;
 import org.jboss.resteasy.reactive.multipart.FileUpload;
 
@@ -19,8 +20,12 @@ import java.util.UUID;
 @Singleton
 public class UploadResource {
 
-    // 🔥 PENTING: Pake Absolute Path sesuai VPS biar gak 404
-    private static final String UPLOAD_DIR = "/opt/mudik-v2/uploads/";
+    // ❌ HAPUS YANG HARDCODE INI:
+    // private static final String UPLOAD_DIR = "/opt/mudik-v2/uploads/";
+
+    // ✅ GANTI JADI INI (BACA CONFIG):
+    @ConfigProperty(name = "quarkus.http.body.uploads-directory")
+    String uploadDir;
 
     @POST
     @Consumes(MediaType.MULTIPART_FORM_DATA)
@@ -31,21 +36,23 @@ public class UploadResource {
                 return Response.status(400).entity(Map.of("error", "File kosong")).build();
             }
 
-            File directory = new File(UPLOAD_DIR);
+            // Pake variable uploadDir dari config
+            File directory = new File(uploadDir);
             if (!directory.exists()) {
-                directory.mkdirs(); // Buat folder kalau belum ada
+                directory.mkdirs(); // Buat folder otomatis kalau belum ada
             }
 
             String originalName = file.fileName();
             String ext = originalName.contains(".") ? originalName.substring(originalName.lastIndexOf(".")) : ".jpg";
             String newFileName = UUID.randomUUID().toString() + ext;
 
-            java.nio.file.Path targetPath = Paths.get(UPLOAD_DIR + newFileName);
+            // Gabungin Path (Aman buat Windows & Linux)
+            java.nio.file.Path targetPath = Paths.get(uploadDir, newFileName);
             Files.move(file.uploadedFile(), targetPath, StandardCopyOption.REPLACE_EXISTING);
 
             return Response.ok(Map.of(
                     "status", "SUKSES",
-                    "saved_path", "uploads/" + newFileName // Path relatif buat disimpen di DB
+                    "saved_path", "uploads/" + newFileName // Path relatif buat DB (tetap 'uploads/' biar frontend gak bingung)
             )).build();
 
         } catch (IOException e) {
@@ -62,7 +69,8 @@ public class UploadResource {
             return Response.status(400).build();
         }
 
-        File file = new File(UPLOAD_DIR + fileName);
+        // Pake variable uploadDir dari config
+        File file = new File(uploadDir, fileName);
 
         if (!file.exists()) {
             return Response.status(Response.Status.NOT_FOUND).build();

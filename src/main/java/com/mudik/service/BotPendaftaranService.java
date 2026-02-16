@@ -37,9 +37,9 @@ public class BotPendaftaranService {
 
         int jumlah = listNama.size();
 
-        // Validasi konsistensi array
-        if (listNik.size() != jumlah || listGender.size() != jumlah) {
-            throw new IllegalArgumentException("Data tidak konsisten! Jumlah NIK dan Nama tidak sama.");
+        // Validasi konsistensi array (Wajib sama panjang)
+        if (listNik.size() != jumlah || listGender.size() != jumlah || listTglLahir.size() != jumlah) {
+            throw new IllegalArgumentException("Data tidak konsisten! Jumlah NIK, Nama, dan Tgl Lahir harus sama.");
         }
 
         // --- CEK KUOTA GLOBAL (TRIPLE KUOTA LOGIC) ---
@@ -49,9 +49,14 @@ public class BotPendaftaranService {
         // Kita hitung berapa kursi yang dibutuhkan (Bayi tidak dihitung)
         int kursiDibutuhkan = 0;
         for (int i = 0; i < jumlah; i++) {
-            LocalDate tglLahir = LocalDate.parse(listTglLahir.get(i));
-            int umur = Period.between(tglLahir, LocalDate.now()).getYears();
-            if (umur >= 2) {
+            try {
+                LocalDate tglLahir = LocalDate.parse(listTglLahir.get(i));
+                int umur = Period.between(tglLahir, LocalDate.now()).getYears();
+                if (umur >= 2) { // Logic: Dibawah 2 tahun (BAYI) pangku, gak makan kuota
+                    kursiDibutuhkan++;
+                }
+            } catch (Exception e) {
+                // Fallback kalau tanggal error, anggap Dewasa (makan kursi)
                 kursiDibutuhkan++;
             }
         }
@@ -62,16 +67,25 @@ public class BotPendaftaranService {
 
         // --- PROSES SIMPAN ---
         for (int i = 0; i < jumlah; i++) {
-            String nik = listNik.get(i);
+            String nik = listNik.get(i).trim();
 
-            // Cek NIK Duplikat
-            if (PendaftaranMudik.count("nik_peserta", nik) > 0) {
-                throw new IllegalArgumentException("NIK " + nik + " sudah terdaftar!");
+            // 🔥 FIX LOGIC NIK: Boleh daftar lagi kalau status sebelumnya DITOLAK/DIBATALKAN
+            // (Kode lama lu ngeblok semua NIK tanpa ampun)
+            long cekNik = PendaftaranMudik.count("nik_peserta = ?1 AND status_pendaftaran NOT IN ('DIBATALKAN', 'DITOLAK')", nik);
+            if (cekNik > 0) {
+                throw new IllegalArgumentException("NIK " + nik + " sudah terdaftar & aktif! Cek status pendaftaran.");
             }
 
-            LocalDate tglLahir = LocalDate.parse(listTglLahir.get(i));
-            int umur = Period.between(tglLahir, LocalDate.now()).getYears();
-            String kategori = (umur < 2) ? "BAYI" : (umur < 5) ? "ANAK" : "DEWASA";
+            LocalDate tglLahir;
+            String kategori;
+            try {
+                tglLahir = LocalDate.parse(listTglLahir.get(i));
+                int umur = Period.between(tglLahir, LocalDate.now()).getYears();
+                kategori = (umur < 2) ? "BAYI" : (umur < 5) ? "ANAK" : "DEWASA";
+            } catch (Exception e) {
+                tglLahir = LocalDate.now();
+                kategori = "DEWASA";
+            }
 
             PendaftaranMudik p = new PendaftaranMudik();
             p.user = user;
@@ -94,17 +108,19 @@ public class BotPendaftaranService {
             if (listNoHp != null && listNoHp.size() > i) hpInput = listNoHp.get(i);
             p.no_hp_peserta = (hpInput != null && !hpInput.isBlank()) ? hpInput : user.no_hp;
 
-            p.status_pendaftaran = "MENUNGGU_VERIFIKASI";
+            // 🔥 FIX STATUS TYPO: PAKE SPASI! (JANGAN PAKE UNDERSCORE)
+            // Biar kebaca sama filter Admin "MENUNGGU VERIFIKASI"
+            p.status_pendaftaran = "MENUNGGU VERIFIKASI";
+
             p.kode_booking = "MDK-" + ruteId + "-" + UUID.randomUUID().toString().substring(0, 6).toUpperCase();
 
             p.persist();
         }
 
-        // --- UPDATE KUOTA (TRIPLE KUOTA LOGIC) ---
-        // Kita nambahin counter Terisi, BUKAN ngurangin sisa
+        // --- UPDATE KUOTA ---
         if (rute.kuota_terisi == null) rute.kuota_terisi = 0;
         rute.kuota_terisi += kursiDibutuhkan;
 
-        // rute.persist() tidak perlu dipanggil karena @Transactional otomatis update dirty entity
+        // Data tersimpan otomatis karena @Transactional
     }
 }
