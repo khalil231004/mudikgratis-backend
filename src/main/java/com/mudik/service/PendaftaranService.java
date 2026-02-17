@@ -48,6 +48,16 @@ public class PendaftaranService {
             throw new Exception("Kuota akun penuh! Sisa slot anda: " + (6 - sudahDaftar));
         }
 
+        // 🔥 3. VALIDASI PENTING: SATU USER = SATU RUTE (LOCK RUTE)
+        // Cari apakah user sudah punya pendaftaran aktif sebelumnya?
+        PendaftaranMudik existingBooking = PendaftaranMudik.find("user.user_id = ?1 AND status_pendaftaran NOT IN ('DITOLAK', 'DIBATALKAN')", user.user_id).firstResult();
+
+        if (existingBooking != null) {
+            // Jika sudah ada, rute yang dipilih SKRANG wajib SAMA dengan rute SEBELUMNYA
+            if (!existingBooking.rute.rute_id.equals(rute.rute_id)) {
+                throw new Exception("Mohon Maaf, Satu Akun hanya boleh memilih 1 Rute Tujuan.\nAnda sudah terdaftar di rute: " + existingBooking.rute.tujuan);
+            }
+        }
         // Cek NIK
         List<String> nikDuplikat = new ArrayList<>();
         if (form.nik_peserta != null) {
