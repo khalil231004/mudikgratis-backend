@@ -17,7 +17,7 @@ import java.util.stream.Collectors;
 public class RuteResource {
 
     // ==========================================
-    // 1. PUBLIC API (Untuk Pendaftar)
+    // 1. PUBLIC API (Untuk Pendaftar / User Dashboard)
     // ==========================================
 
     @GET
@@ -32,9 +32,12 @@ public class RuteResource {
             map.put("tanggal_raw", r.tanggal_keberangkatan);
             map.put("waktu_berangkat", r.getFormattedDate());
 
-            // Info Kuota Public (Sederhana)
-            map.put("kuota_total", r.kuota_total);
+            // Info Kuota Public
+            map.put("kuota_total", r.kuota_total != null ? r.kuota_total : 0);
+
+            // 🔥 UPDATE AMAN: Kirim dua-duanya biar Frontend User gak bingung
             map.put("kuota_tersisa", r.getSisaKuota());
+            map.put("sisa_kuota", r.getSisaKuota());
 
             // Status Seat
             boolean isPenuh = (r.getSisaKuota() <= 0);
@@ -55,10 +58,9 @@ public class RuteResource {
     }
 
     // ==========================================
-    // 2. ADMIN API (Full Detail Kuota)
+    // 2. ADMIN API (Full Detail Kuota Untuk AdminRute.tsx)
     // ==========================================
 
-    // 🔥 Endpoint Khusus Admin (Biar bisa liat kuota fix & terisi)
     @GET
     @Path("/admin")
     public Response getAllRuteAdmin() {
@@ -76,13 +78,20 @@ public class RuteResource {
             map.put("kuota_total", r.kuota_total != null ? r.kuota_total : 0);
             map.put("kuota_terisi", r.kuota_terisi != null ? r.kuota_terisi : 0);
             map.put("kuota_fix", r.kuota_fix != null ? r.kuota_fix : 0);
+
+            // 🔥 UPDATE AMAN: Kirim dua-duanya biar AdminRute.tsx pasti muncul angkanya
             map.put("sisa_kuota", r.getSisaKuota());
+            map.put("kuota_tersisa", r.getSisaKuota());
 
             return map;
         }).collect(Collectors.toList());
 
         return Response.ok(hasil).build();
     }
+
+    // ==========================================
+    // 3. LOGIKA CREATE & UPDATE (MANUAL MODE)
+    // ==========================================
 
     @POST
     @Transactional
@@ -91,8 +100,10 @@ public class RuteResource {
             return Response.status(400).entity(Map.of("error", "Asal dan Tujuan wajib diisi")).build();
         }
 
-        // Default value jika null
+        // Logic Manual: Kalau admin kirim angka kuota, pake itu. Kalau null, 0.
         if(ruteBaru.kuota_total == null) ruteBaru.kuota_total = 0;
+
+        // Reset counter (Aman)
         ruteBaru.kuota_terisi = 0;
         ruteBaru.kuota_fix = 0;
 
@@ -100,7 +111,7 @@ public class RuteResource {
 
         return Response.status(201).entity(Map.of(
                 "status", "BERHASIL",
-                "message", "Rute ke " + ruteBaru.tujuan + " berhasil dibuat."
+                "message", "Rute berhasil dibuat. Total Kuota: " + ruteBaru.kuota_total
         )).build();
     }
 
@@ -115,7 +126,8 @@ public class RuteResource {
         rute.tujuan = dataBaru.tujuan;
         rute.tanggal_keberangkatan = dataBaru.tanggal_keberangkatan;
 
-        // 🔥 Admin bisa override kuota total manual
+        // 🔥 Logic Manual Override:
+        // Admin bisa ubah angka kuota total kapan saja lewat menu edit
         if(dataBaru.kuota_total != null) {
             rute.kuota_total = dataBaru.kuota_total;
         }
@@ -131,8 +143,9 @@ public class RuteResource {
         Rute rute = Rute.findById(id);
         if (rute == null) return Response.status(404).build();
 
+        // Safety: Jangan hapus rute kalau sudah ada yang daftar
         if (rute.kuota_terisi != null && rute.kuota_terisi > 0) {
-            return Response.status(400).entity(Map.of("error", "Gagal hapus! Masih ada " + rute.kuota_terisi + " pendaftar.")).build();
+            return Response.status(400).entity(Map.of("error", "Gagal hapus! Masih ada " + rute.kuota_terisi + " pendaftar di rute ini.")).build();
         }
 
         rute.delete();
