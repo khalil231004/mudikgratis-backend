@@ -91,7 +91,8 @@ public class PendaftaranService {
             p.jenis_kelamin = (form.jenis_kelamin != null && i < form.jenis_kelamin.size()) ? form.jenis_kelamin.get(i) : "L";
             p.alamat_rumah = (form.alamat_rumah != null && i < form.alamat_rumah.size()) ? form.alamat_rumah.get(i) : "-";
 
-            String hp = (form.no_hp_peserta != null && i < form.no_hp_peserta.size()) ? form.no_hp_peserta.get(i) : user.no_hp;
+            // Simpan HP jika diisi, jika tidak biarkan ambil dari HP User nanti saat verifikasi
+            String hp = (form.no_hp_peserta != null && i < form.no_hp_peserta.size()) ? form.no_hp_peserta.get(i) : null;
             p.no_hp_peserta = hp;
 
             if (form.fotoBukti != null && i < form.fotoBukti.size()) {
@@ -251,7 +252,7 @@ public class PendaftaranService {
             tipeWa = "DITERIMA(H-3)";
         }
 
-        // 🔥 FIX PENTING: AMBIL HP YANG VALID
+        // 🔥 FIX: Ambil HP Penumpang atau HP User Akun
         String hpValid = getValidPhoneNumber(keluarga);
         return whatsAppService.generateLink(hpValid, tipeWa, keluarga.get(0), alasan);
     }
@@ -265,7 +266,7 @@ public class PendaftaranService {
     }
 
     // =================================================================
-    // 7. ADMIN: VERIFIKASI CUSTOM (CHECKBOX) - DENGAN WA PINTAR 🔥
+    // 7. ADMIN: VERIFIKASI CUSTOM (CHECKBOX) - DENGAN WA PINTAR
     // =================================================================
     @Transactional
     public String verifikasiCustom(Long userId, List<Long> idsDitolak, String alasan) throws Exception {
@@ -314,28 +315,28 @@ public class PendaftaranService {
             tipeWa = "DITERIMA(H-3)";
         }
 
-        // 🔥 FIX PENTING: AMBIL HP YANG VALID (JANGAN CUMA GET(0))
+        // 🔥 FIX: Ambil HP Penumpang atau HP User Akun
         String hpValid = getValidPhoneNumber(keluarga);
         return whatsAppService.generateLink(hpValid, tipeWa, keluarga.get(0), pesanAlasan);
     }
 
-    // 🔥 HELPER: CARI HP VALID DI KELUARGA / USER
+    // 🔥 HELPER: CARI HP VALID (PENUMPANG -> USER)
     private String getValidPhoneNumber(List<PendaftaranMudik> keluarga) {
         if (keluarga == null || keluarga.isEmpty()) return null;
 
-        // 1. Coba cari di salah satu penumpang yang HP-nya valid
+        // 1. Cek nomor HP di data salah satu penumpang dalam rombongan
         for (PendaftaranMudik p : keluarga) {
-            if (p.no_hp_peserta != null && p.no_hp_peserta.length() > 7) {
-                return p.no_hp_peserta;
+            if (p.no_hp_peserta != null && p.no_hp_peserta.trim().length() > 7) {
+                return p.no_hp_peserta.trim();
             }
         }
 
-        // 2. Kalau semua null, ambil dari Akun User (Kepala Keluarga)
+        // 2. Kalau semua penumpang kosong HP-nya, ambil dari nomor HP akun (User)
         if (keluarga.get(0).user != null && keluarga.get(0).user.no_hp != null) {
-            return keluarga.get(0).user.no_hp;
+            return keluarga.get(0).user.no_hp.trim();
         }
 
-        return null; // Nyerah, balikin null (nanti WA Service return #)
+        return null;
     }
 
     // HELPER UPLOAD
