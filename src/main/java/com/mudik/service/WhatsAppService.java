@@ -11,16 +11,27 @@ import java.util.Optional;
 public class WhatsAppService {
 
     @ConfigProperty(name = "app.frontend.url")
-    Optional<String> frontendUrlOpt; // Pakai Optional biar gak error kalau lupa set di properties
+    Optional<String> frontendUrlOpt;
 
     public String generateLink(String noHp, String tipe, PendaftaranMudik p, String alasan) {
-        if (noHp == null || noHp.length() < 7) return "#";
+        // 🔥 DEBUG LOG 1: Cek Input yang masuk
+        System.out.println("========== DEBUG WA ==========");
+        System.out.println("No HP: " + noHp);
+        System.out.println("Tipe: " + tipe);
+        System.out.println("Nama: " + p.nama_peserta);
+
+        // 1. Cek Validasi Nomor HP
+        if (noHp == null || noHp.length() < 7) {
+            System.out.println("❌ ERROR WA: Nomor HP Kosong atau Tidak Valid!");
+            return "#";
+        }
 
         String hpFormat = noHp.replaceAll("[^0-9]", "");
         if (hpFormat.startsWith("0")) hpFormat = "62" + hpFormat.substring(1);
 
-        // Default URL ke Login jika config kosong
+        // 2. Cek Config URL Frontend
         String baseUrl = frontendUrlOpt.orElse("https://dishubosrm.acehprov.go.id");
+        System.out.println("Base URL: " + baseUrl);
 
         String pesan = "";
         String linkAction = "";
@@ -28,7 +39,6 @@ public class WhatsAppService {
 
         try {
             switch (tipe) {
-                // KASUS 1: DITOLAK / PERLU REVISI (Prioritas Utama sesuai request)
                 case "TOLAK_DATA":
                     String alasanFinal = (alasan != null && !alasan.isBlank()) ? alasan : "Data belum lengkap.";
                     pesan = "👋 *Salam Seulamat dari Dishub Aceh*\n\n" +
@@ -40,19 +50,16 @@ public class WhatsAppService {
                     linkAction = baseUrl + "/login";
                     break;
 
-                // KASUS 2: DITERIMA & KONFIRMASI H-3
                 case "DITERIMA(H-3)":
                     pesan = "👋 *Salam Seulamat dari Dishub Aceh*\n\n" +
                             "Yth. Sdr/i *" + p.nama_peserta + "*,\n" +
                             "Selamat! Pendaftaran Mudik Anda telah *DITERIMA*.\n\n" +
                             "🚍 *PENTING: KONFIRMASI KEBERANGKATAN*\n" +
                             "Agar kursi Anda tidak hangus, WAJIB melakukan konfirmasi kehadiran melalui link ini:";
-                    // Mengarah ke halaman konfirmasi khusus
                     linkAction = baseUrl + "/konfirmasi/" + p.uuid;
                     break;
 
-                // KASUS 3: TERIMA AWAL
-                default:
+                default: // TERIMA
                     pesan = "👋 *Salam Seulamat dari Dishub Aceh*\n\n" +
                             "Halo Sdr/i *" + p.nama_peserta + "*,\n" +
                             "Data pendaftaran Anda telah kami terima. Pantau terus status tiket Anda di Dashboard.";
@@ -61,10 +68,14 @@ public class WhatsAppService {
             }
 
             String fullMessage = pesan + "\n" + linkAction + footer;
-            return "https://wa.me/" + hpFormat + "?text=" + URLEncoder.encode(fullMessage, StandardCharsets.UTF_8.toString());
+            String finalLink = "https://wa.me/" + hpFormat + "?text=" + URLEncoder.encode(fullMessage, StandardCharsets.UTF_8.toString());
+
+            System.out.println("✅ SUKSES GENERATE LINK: " + finalLink);
+            return finalLink;
 
         } catch (Exception e) {
-            System.err.println("Error WA: " + e.getMessage());
+            System.err.println("❌ CRITICAL ERROR WA: " + e.getMessage());
+            e.printStackTrace();
             return "#";
         }
     }
