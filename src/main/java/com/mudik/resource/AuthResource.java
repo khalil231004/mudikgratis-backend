@@ -20,7 +20,7 @@ import javax.crypto.spec.SecretKeySpec;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
-import java.util.Base64; // 🔥 Tambahkan ini di baris 23 atau sekitarnya
+
 
 @Path("/api/auth")
 @Produces(MediaType.APPLICATION_JSON)
@@ -138,8 +138,7 @@ public class AuthResource {
                 return Response.status(401).entity(Map.of("error", "Akun belum aktif! Cek email Anda.")).build();
             }
 
-            byte[] keyBytes = Base64.getDecoder().decode(jwtSecret); // 🔥 Decode Base64 dulu
-            SecretKey kunci = new SecretKeySpec(keyBytes, "HmacSHA256");
+            SecretKey kunci = new SecretKeySpec(jwtSecret.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
             String token = Jwt.issuer(baseUrl)
                     .upn(user.email)
                     .groups(new HashSet<>(List.of(user.role)))
