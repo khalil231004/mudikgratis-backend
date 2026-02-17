@@ -258,22 +258,23 @@ public class AdminResource {
     @Transactional
     public Response verifikasiCustom(@PathParam("userId") Long userId, Map<String, Object> body) {
         try {
-            // Ambil list ID yang DICENTANG (DITOLAK)
             List<Integer> rawList = (List<Integer>) body.get("rejected_ids");
             String alasan = (String) body.get("alasan");
 
             if (rawList == null) return Response.status(400).entity(Map.of("error", "List ID wajib ada")).build();
 
-            // Convert Integer ke Long
             List<Long> rejectedIds = rawList.stream().map(Integer::longValue).collect(Collectors.toList());
 
+            // 🔥 INI PENTING: Tangkap Link WA dari Service
             String linkWa = pendaftaranService.verifikasiCustom(userId, rejectedIds, alasan);
 
+            // 🔥 DAN MASUKKAN KE SINI (Biar Frontend bisa baca)
             return Response.ok(Map.of(
                     "status", "BERHASIL",
                     "pesan", "Data berhasil diproses.",
                     "link_wa", linkWa
             )).build();
+
         } catch (Exception e) {
             e.printStackTrace();
             return Response.status(400).entity(Map.of("error", e.getMessage())).build();
