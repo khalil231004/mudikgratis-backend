@@ -3,6 +3,7 @@ package com.mudik.resource;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.mudik.model.User;
 import com.mudik.service.AuthService;
+import io.quarkus.elytron.security.common.BcryptUtil;
 import io.quarkus.mailer.Mail;
 import io.quarkus.mailer.Mailer;
 import io.smallrye.jwt.build.Jwt;
@@ -34,15 +35,15 @@ public class AuthResource {
     @ConfigProperty(name = "smallrye.jwt.sign.key")
     String jwtSecret;
 
-    // URL Backend (VPS) - Dipakai buat bikin link verifikasi di email
+    // URL Backend (VPS)
     @ConfigProperty(name = "app.base.url", defaultValue = "https://dishubosrm.acehprov.go.id")
     String baseUrl;
 
-    // 🔥 URL FRONTEND (String Baru) - Dipakai buat redirect user setelah klik link
+    // 🔥 URL FRONTEND (Wajib benar agar link di email bisa dibuka)
     @ConfigProperty(name = "app.frontend.url", defaultValue = "https://seulamat.dishubaceh.com")
     String frontendUrl;
-//b6
 
+    // DTO Classes
     public static class RegisterRequest {
         @JsonProperty("nama_lengkap") public String nama_lengkap;
         public String email;
@@ -56,7 +57,16 @@ public class AuthResource {
         public String email;
         public String password;
     }
-//baru
+
+    // DTO Baru buat Reset Password
+    public static class ResetPasswordRequest {
+        public String token; // Token dari URL email
+        @JsonProperty("new_password") public String newPassword;
+    }
+
+    // ==========================================
+    // 1. REGISTER (Kirim Email Verifikasi)
+    // ==========================================
     @POST
     @Path("/register")
     @PermitAll
@@ -73,7 +83,6 @@ public class AuthResource {
             userBaru.status_akun = "BELUM_VERIF";
             userBaru.persist();
 
-            // Link Verifikasi tetap mengarah ke API Backend dulu buat validasi DB
             String link = baseUrl + "/api/auth/verify?token=" + token;
             String bodyEmail = templateEmailVerifikasi(userBaru.nama_lengkap, link);
 
@@ -89,32 +98,34 @@ public class AuthResource {
         }
     }
 
+    // ==========================================
+    // 2. VERIFIKASI AKUN (Link dari Email Register)
+    // ==========================================
     @GET
     @Path("/verify")
     @PermitAll
     @Transactional
     public Response verifyAccount(@QueryParam("token") String token) {
         if (token == null) {
-            // Redirect ke Frontend Login dengan error
             return Response.seeOther(URI.create(frontendUrl + "/login?error=token_missing")).build();
         }
 
         User user = User.find("verification_token", token).firstResult();
 
         if (user == null) {
-            // Redirect ke Frontend Login dengan error
             return Response.seeOther(URI.create(frontendUrl + "/login?error=invalid_token")).build();
         }
 
-        // Aktifkan User
         user.status_akun = "AKTIF";
         user.verification_token = null;
         user.persist();
 
-        // 🔥 REDIRECT KE FRONTEND UTAMA (DISHUB) SETELAH SUKSES
         return Response.seeOther(URI.create(frontendUrl + "/login?status=verified")).build();
     }
 
+    // ==========================================
+    // 3. LOGIN
+    // ==========================================
     @POST
     @Path("/login")
     @PermitAll
@@ -147,7 +158,73 @@ public class AuthResource {
         }
     }
 
-    // --- Template Email ---
+    // ==========================================
+    // 4. REQUEST RESET PASSWORD (Kirim Email Reset) 🔥 BARU
+    // ==========================================
+    @POST
+    @Path("/request-reset-password")
+    @PermitAll
+    @Transactional
+    public Response requestResetPassword(Map<String, String> body) {
+        String email = body.get("email");
+        if (email == null) return Response.status(400).entity(Map.of("error", "Email wajib diisi")).build();
+
+        User user = User.find("email", email).firstResult();
+        if (user == null) {
+            // Return 404 jika email tidak ditemukan
+            return Response.status(404).entity(Map.of("error", "Email tidak terdaftar")).build();
+        }
+
+        // Generate token reset
+        String token = UUID.randomUUID().toString();
+
+        // Kita gunakan field verification_token lagi untuk menyimpan token reset sementara
+        user.verification_token = token;
+        user.persist();
+
+        // 🔥 Link ini mengarah ke FRONTEND (Halaman Form Reset Password)
+        // Contoh: https://seulamat.dishubaceh.com/reset-password?token=xxxx-yyyy-zzzz
+        String linkFrontend = frontendUrl + "/reset-password?token=" + token;
+
+        String bodyEmail = templateEmailReset(user.nama_lengkap, linkFrontend);
+
+        mailer.send(Mail.withHtml(user.email, "Reset Password Mudik Gratis", bodyEmail));
+
+        return Response.ok(Map.of("pesan", "Link reset password telah dikirim ke email Anda.")).build();
+    }
+
+    // ==========================================
+    // 5. EKSEKUSI RESET PASSWORD (Terima Token & Password Baru) 🔥 BARU
+    // ==========================================
+    @POST
+    @Path("/reset-password")
+    @PermitAll
+    @Transactional
+    public Response resetPasswordFinish(ResetPasswordRequest req) {
+        if (req.token == null || req.newPassword == null) {
+            return Response.status(400).entity(Map.of("error", "Data tidak lengkap")).build();
+        }
+
+        // Cari user berdasarkan token
+        User user = User.find("verification_token", req.token).firstResult();
+
+        if (user == null) {
+            return Response.status(400).entity(Map.of("error", "Token tidak valid atau kadaluarsa")).build();
+        }
+
+        // Update password & Hapus token
+        user.password_hash = BcryptUtil.bcryptHash(req.newPassword);
+        user.verification_token = null; // Hapus token agar tidak bisa dipakai lagi
+        user.persist();
+
+        return Response.ok(Map.of("pesan", "Password berhasil diubah! Silakan login.")).build();
+    }
+
+    // ==========================================
+    // TEMPLATE EMAIL
+    // ==========================================
+
+    // Template Verifikasi Akun
     private String templateEmailVerifikasi(String nama, String link) {
         return """
             <!DOCTYPE html><html><body style='font-family:sans-serif;background:#f3f4f6;padding:20px;'>
@@ -158,6 +235,21 @@ public class AuthResource {
                 <p style='font-size:12px;color:#666;'>Atau copy link ini: %s</p>
             </div></body></html>
             """.formatted(nama, link, link);
+    }
+
+    // Template Reset Password 🔥 BARU
+    private String templateEmailReset(String nama, String link) {
+        return """
+            <!DOCTYPE html><html><body style='font-family:sans-serif;background:#fee2e2;padding:20px;'>
+            <div style='max-width:600px;margin:auto;background:white;padding:30px;border-radius:10px;text-align:center;border-top: 5px solid #dc2626;'>
+                <h1 style='color:#dc2626;'>🔒 Reset Password</h1>
+                <p>Halo <b>%s</b>,</p>
+                <p>Kami menerima permintaan untuk mereset password akun Mudik Gratis Anda.</p>
+                <p>Klik tombol di bawah untuk membuat password baru:</p>
+                <a href='%s' style='display:inline-block;background:#dc2626;color:white;padding:12px 24px;text-decoration:none;border-radius:5px;margin:20px 0;'>Ganti Password</a>
+                <p style='font-size:12px;color:#666;'>Jika Anda tidak meminta ini, abaikan saja email ini.</p>
+            </div></body></html>
+            """.formatted(nama, link);
     }
 
     @GET
