@@ -49,6 +49,7 @@ public class User extends PanacheEntityBase {
 
     @JsonIgnore
     public LocalDateTime token_expired_at;
+    public String foto_profil;
 
     // --- HELPER METHODS (Opsional tapi Guna) ---
 
