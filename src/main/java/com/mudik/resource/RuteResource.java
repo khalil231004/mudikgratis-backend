@@ -17,12 +17,11 @@ import java.util.stream.Collectors;
 public class RuteResource {
 
     // ==========================================
-    // 1. PUBLIC API (Bebas Akses - Sesuai Properties)
+    // 1. PUBLIC API (Untuk Pendaftar)
     // ==========================================
 
     @GET
     public Response getAllRute() {
-        // Urutkan berdasarkan tanggal
         List<Rute> listRute = Rute.list("ORDER BY tanggal_keberangkatan ASC");
 
         List<Map<String, Object>> hasil = listRute.stream().map(r -> {
@@ -33,13 +32,11 @@ public class RuteResource {
             map.put("tanggal_raw", r.tanggal_keberangkatan);
             map.put("waktu_berangkat", r.getFormattedDate());
 
-            // 🔥 LOGIKA KUOTA: Ini Kuota GLOBAL Rute (Bukan Bus)
-            // User daftar masuk ke sini dulu. Bus diurus Admin belakangan.
+            // Info Kuota Public (Sederhana)
             map.put("kuota_total", r.kuota_total);
-            map.put("kuota_terisi", r.kuota_terisi);
             map.put("kuota_tersisa", r.getSisaKuota());
 
-            // Status Seat buat Frontend
+            // Status Seat
             boolean isPenuh = (r.getSisaKuota() <= 0);
             map.put("status_seat", isPenuh ? "HABIS" : "TERSEDIA");
 
@@ -58,8 +55,34 @@ public class RuteResource {
     }
 
     // ==========================================
-    // 2. ADMIN API (Create, Update, Delete - BUTUH TOKEN)
+    // 2. ADMIN API (Full Detail Kuota)
     // ==========================================
+
+    // 🔥 Endpoint Khusus Admin (Biar bisa liat kuota fix & terisi)
+    @GET
+    @Path("/admin")
+    public Response getAllRuteAdmin() {
+        List<Rute> listRute = Rute.list("ORDER BY tanggal_keberangkatan ASC");
+
+        List<Map<String, Object>> hasil = listRute.stream().map(r -> {
+            Map<String, Object> map = new HashMap<>();
+            map.put("rute_id", r.rute_id);
+            map.put("asal", r.asal);
+            map.put("tujuan", r.tujuan);
+            map.put("tanggal_raw", r.tanggal_keberangkatan);
+            map.put("waktu_berangkat", r.getFormattedDate());
+
+            // 🔥 DETAIL KUOTA LENGKAP UTK ADMIN
+            map.put("kuota_total", r.kuota_total != null ? r.kuota_total : 0);
+            map.put("kuota_terisi", r.kuota_terisi != null ? r.kuota_terisi : 0);
+            map.put("kuota_fix", r.kuota_fix != null ? r.kuota_fix : 0);
+            map.put("sisa_kuota", r.getSisaKuota());
+
+            return map;
+        }).collect(Collectors.toList());
+
+        return Response.ok(hasil).build();
+    }
 
     @POST
     @Transactional
@@ -68,11 +91,8 @@ public class RuteResource {
             return Response.status(400).entity(Map.of("error", "Asal dan Tujuan wajib diisi")).build();
         }
 
-        // Logic: Admin set total kuota tiket yang tersedia untuk rute ini
-        // Tidak peduli bus-nya apa, yang penting limit tiketnya segini.
+        // Default value jika null
         if(ruteBaru.kuota_total == null) ruteBaru.kuota_total = 0;
-
-        // Reset counter
         ruteBaru.kuota_terisi = 0;
         ruteBaru.kuota_fix = 0;
 
@@ -80,7 +100,7 @@ public class RuteResource {
 
         return Response.status(201).entity(Map.of(
                 "status", "BERHASIL",
-                "message", "Rute ke " + ruteBaru.tujuan + " berhasil dibuat dengan kuota " + ruteBaru.kuota_total
+                "message", "Rute ke " + ruteBaru.tujuan + " berhasil dibuat."
         )).build();
     }
 
@@ -91,32 +111,28 @@ public class RuteResource {
         Rute rute = Rute.findById(id);
         if (rute == null) return Response.status(404).entity(Map.of("error", "Rute tidak ditemukan")).build();
 
-        // Update Info Dasar
         rute.asal = dataBaru.asal;
         rute.tujuan = dataBaru.tujuan;
         rute.tanggal_keberangkatan = dataBaru.tanggal_keberangkatan;
 
-        // 🔥 LOGIC UPDATE KUOTA:
-        // Admin bisa nambah/kurang kuota total kapan aja.
-        // TAPI jangan reset 'kuota_terisi' karena itu data real pendaftar!
+        // 🔥 Admin bisa override kuota total manual
         if(dataBaru.kuota_total != null) {
             rute.kuota_total = dataBaru.kuota_total;
         }
 
         rute.persist();
-        return Response.ok(Map.of("status", "BERHASIL", "message", "Data rute & kuota diperbarui")).build();
+        return Response.ok(Map.of("status", "BERHASIL", "message", "Data rute diperbarui")).build();
     }
 
     @DELETE
     @Path("/{id}")
     @Transactional
     public Response deleteRute(@PathParam("id") Long id) {
-        // Cek apakah ada pendaftar? Kalau ada jangan dihapus sembarangan
         Rute rute = Rute.findById(id);
         if (rute == null) return Response.status(404).build();
 
-        if (rute.kuota_terisi > 0) {
-            return Response.status(400).entity(Map.of("error", "Gagal hapus! Masih ada " + rute.kuota_terisi + " pendaftar di rute ini.")).build();
+        if (rute.kuota_terisi != null && rute.kuota_terisi > 0) {
+            return Response.status(400).entity(Map.of("error", "Gagal hapus! Masih ada " + rute.kuota_terisi + " pendaftar.")).build();
         }
 
         rute.delete();
