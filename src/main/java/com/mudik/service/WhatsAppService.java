@@ -14,6 +14,10 @@ public class WhatsAppService {
 
     /**
      * Generate Link WhatsApp dengan Template Profesional Dishub Aceh
+     * @param noHp Nomor tujuan
+     * @param tipe Tipe pesan (TERIMA, TOLAK_DATA, DITERIMA(H-3))
+     * @param p Objek pendaftaran
+     * @param alasan Alasan penolakan (diisi jika tipe adalah TOLAK_DATA)
      */
     public String generateLink(String noHp, String tipe, PendaftaranMudik p, String alasan) {
         // 1. Validasi Nomor HP
@@ -29,7 +33,7 @@ public class WhatsAppService {
 
         try {
             switch (tipe) {
-                // KASUS 1: LOLOS VERIFIKASI AWAL
+                // KASUS 1: LOLOS VERIFIKASI AWAL (AUTO ACCEPT)
                 case "TERIMA":
                     pesan = "👋 *Salam Seulamat dari Dishub Aceh*\n\n" +
                             "Halo Sdr/i *" + p.nama_peserta + "*,\n" +

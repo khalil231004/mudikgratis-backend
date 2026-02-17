@@ -107,7 +107,6 @@ public class PendaftaranService {
             listToSave.add(p);
         }
 
-        // LOCK DB
         Rute ruteLocked = Rute.findById(rute.rute_id, LockModeType.PESSIMISTIC_WRITE);
         if (ruteLocked.getSisaKuota() < jumlahPeserta) {
             throw new Exception("Mohon maaf, Kuota Rute baru saja habis!");
@@ -187,7 +186,7 @@ public class PendaftaranService {
     }
 
     // =================================================================
-    // 4. ADMIN: TOLAK PESERTA SATUAN (Individu)
+    // 4. ADMIN: TOLAK PESERTA SATUAN
     // =================================================================
     @Transactional
     public void adminTolakPeserta(Long pendaftaranId) {
@@ -256,16 +255,15 @@ public class PendaftaranService {
     }
 
     // =================================================================
-    // 6. ADMIN: TOLAK KELUARGA (YANG HILANG) - RESTORED 🔥
+    // 6. ADMIN: TOLAK KELUARGA (BATCH) - DIKEMBALIKAN 🔥
     // =================================================================
     @Transactional
     public String tolakPendaftaranKeluarga(Long userId, String alasan) throws Exception {
-        // Reuse logic dari updateStatusKeluarga biar konsisten
         return updateStatusKeluarga(userId, "DITOLAK", alasan);
     }
 
     // =================================================================
-    // 7. ADMIN: VERIFIKASI CUSTOM (CHECKBOX)
+    // 7. ADMIN: VERIFIKASI CUSTOM (CHECKBOX) - DENGAN WA PINTAR 🔥
     // =================================================================
     @Transactional
     public String verifikasiCustom(Long userId, List<Long> idsDitolak, String alasan) throws Exception {
@@ -303,12 +301,14 @@ public class PendaftaranService {
             p.persist();
         }
 
+        // 🔥 LOGIKA WA: JIKA ADA 1 SAJA DITOLAK -> KIRIM "TOLAK_DATA" AGAR USER LOGIN
+        // JIKA SEMUA BERSIH -> KIRIM "DITERIMA(H-3)"
         String tipeWa;
         String pesanAlasan = null;
 
         if (countDitolak > 0) {
             tipeWa = "TOLAK_DATA";
-            pesanAlasan = "Sebagian data penumpang tidak valid (" + alasan + "). Silakan cek Dashboard untuk detail dan perbaiki data.";
+            pesanAlasan = "Terdapat " + countDitolak + " data penumpang yang perlu diperbaiki (" + alasan + ").";
         } else {
             tipeWa = "DITERIMA(H-3)";
         }
