@@ -107,6 +107,7 @@ public class PendaftaranService {
             listToSave.add(p);
         }
 
+        // LOCK DB
         Rute ruteLocked = Rute.findById(rute.rute_id, LockModeType.PESSIMISTIC_WRITE);
         if (ruteLocked.getSisaKuota() < jumlahPeserta) {
             throw new Exception("Mohon maaf, Kuota Rute baru saja habis!");
@@ -219,7 +220,6 @@ public class PendaftaranService {
         for (PendaftaranMudik p : keluarga) {
             String statusLama = p.status_pendaftaran;
 
-            // Satpam: Jangan ubah yang sudah DITOLAK
             if (("DITOLAK".equals(statusLama) || "DIBATALKAN".equals(statusLama))
                     && !"DITOLAK".equalsIgnoreCase(statusBaru)
                     && !"MENUNGGU VERIFIKASI".equalsIgnoreCase(statusBaru)) {
@@ -251,11 +251,13 @@ public class PendaftaranService {
             tipeWa = "DITERIMA(H-3)";
         }
 
-        return whatsAppService.generateLink(keluarga.get(0).no_hp_peserta, tipeWa, keluarga.get(0), alasan);
+        // 🔥 FIX PENTING: AMBIL HP YANG VALID
+        String hpValid = getValidPhoneNumber(keluarga);
+        return whatsAppService.generateLink(hpValid, tipeWa, keluarga.get(0), alasan);
     }
 
     // =================================================================
-    // 6. ADMIN: TOLAK KELUARGA (BATCH) - DIKEMBALIKAN 🔥
+    // 6. ADMIN: TOLAK KELUARGA (BATCH)
     // =================================================================
     @Transactional
     public String tolakPendaftaranKeluarga(Long userId, String alasan) throws Exception {
@@ -301,8 +303,7 @@ public class PendaftaranService {
             p.persist();
         }
 
-        // 🔥 LOGIKA WA: JIKA ADA 1 SAJA DITOLAK -> KIRIM "TOLAK_DATA" AGAR USER LOGIN
-        // JIKA SEMUA BERSIH -> KIRIM "DITERIMA(H-3)"
+        // 🔥 LOGIKA WA
         String tipeWa;
         String pesanAlasan = null;
 
@@ -313,10 +314,31 @@ public class PendaftaranService {
             tipeWa = "DITERIMA(H-3)";
         }
 
-        return whatsAppService.generateLink(keluarga.get(0).no_hp_peserta, tipeWa, keluarga.get(0), pesanAlasan);
+        // 🔥 FIX PENTING: AMBIL HP YANG VALID (JANGAN CUMA GET(0))
+        String hpValid = getValidPhoneNumber(keluarga);
+        return whatsAppService.generateLink(hpValid, tipeWa, keluarga.get(0), pesanAlasan);
     }
 
-    // HELPER
+    // 🔥 HELPER: CARI HP VALID DI KELUARGA / USER
+    private String getValidPhoneNumber(List<PendaftaranMudik> keluarga) {
+        if (keluarga == null || keluarga.isEmpty()) return null;
+
+        // 1. Coba cari di salah satu penumpang yang HP-nya valid
+        for (PendaftaranMudik p : keluarga) {
+            if (p.no_hp_peserta != null && p.no_hp_peserta.length() > 7) {
+                return p.no_hp_peserta;
+            }
+        }
+
+        // 2. Kalau semua null, ambil dari Akun User (Kepala Keluarga)
+        if (keluarga.get(0).user != null && keluarga.get(0).user.no_hp != null) {
+            return keluarga.get(0).user.no_hp;
+        }
+
+        return null; // Nyerah, balikin null (nanti WA Service return #)
+    }
+
+    // HELPER UPLOAD
     private String uploadFileHelper(FileUpload fileUpload, String nik) throws IOException {
         File folder = new File(uploadDir);
         if (!folder.exists()) folder.mkdirs();
