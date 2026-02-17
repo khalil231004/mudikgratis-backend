@@ -13,54 +13,67 @@ public class WhatsAppService {
     String frontendUrl;
 
     /**
-     * @param noHp Nomor tujuan
-     * @param tipe Tipe pesan (TERIMA, TOLAK_DATA, DITERIMA(H-3))
-     * @param p Objek pendaftaran
-     * @param alasan Alasan penolakan (diisi jika tipe adalah TOLAK_DATA)
+     * Generate Link WhatsApp dengan Template Profesional Dishub Aceh
      */
     public String generateLink(String noHp, String tipe, PendaftaranMudik p, String alasan) {
+        // 1. Validasi Nomor HP
         if (noHp == null || noHp.length() < 7) return "#";
 
+        // 2. Format HP (08xx -> 628xx)
         String hpFormat = noHp.replaceAll("[^0-9]", "");
         if (hpFormat.startsWith("0")) hpFormat = "62" + hpFormat.substring(1);
 
         String pesan = "";
         String linkAction = "";
+        String footer = "\n\n_Pesan otomatis dari Sistem Mudik Gratis - Dinas Perhubungan Aceh_";
 
         try {
             switch (tipe) {
+                // KASUS 1: LOLOS VERIFIKASI AWAL
                 case "TERIMA":
-                    pesan = "Halo Sdr/i *" + p.nama_peserta + "*,\n\n" +
-                            "Selamat! Pendaftaran Mudik Gratis Anda telah *DITERIMA*.\n" +
-                            "Kode Booking: *" + p.kode_booking + "*\n\n" +
-                            "Silakan cek tiket Anda di sini: ";
-                    linkAction = frontendUrl + "/login";
-                    break;
-
-                case "TOLAK_DATA":
-                    // Menggunakan variabel alasan yang dikirim dari Service
-                    String alasanFinal = (alasan != null && !alasan.isBlank()) ? alasan : "Data tidak memenuhi syarat verifikasi.";
-                    pesan = "Mohon Maaf Sdr/i *" + p.nama_peserta + "*,\n\n" +
-                            "Pendaftaran Mudik Gratis Anda *DITOLAK* dengan alasan:\n" +
-                            "👉 *" + alasanFinal + "*\n\n" +
-                            "Silakan login kembali untuk memperbaiki data:";
-                    linkAction = frontendUrl + "/login";
-                    break;
-
-                case "DITERIMA(H-3)":
-                    pesan = "⚠️ *KONFIRMASI KEHADIRAN (H-3)* ⚠️\n\n" +
+                    pesan = "👋 *Salam Seulamat dari Dishub Aceh*\n\n" +
                             "Halo Sdr/i *" + p.nama_peserta + "*,\n" +
-                            "Mohon klik link berikut untuk konfirmasi keberangkatan: ";
+                            "✅ *PENDAFTARAN BERHASIL DI-VERIFIKASI*\n\n" +
+                            "Selamat! Data administrasi Anda telah kami terima dan dinyatakan *LENGKAP*.\n" +
+                            "🎫 Kode Booking: *" + p.kode_booking + "*\n\n" +
+                            "Langkah selanjutnya: Mohon pantau terus Dashboard untuk informasi jadwal bus dan tiket elektronik Anda di sini:";
+                    linkAction = frontendUrl + "/login";
+                    break;
+
+                // KASUS 2: DITOLAK (DATA SALAH/BURAM)
+                case "TOLAK_DATA":
+                    String alasanFinal = (alasan != null && !alasan.isBlank()) ? alasan : "Data tidak terbaca/tidak sesuai syarat.";
+                    pesan = "👋 *Salam Seulamat dari Dishub Aceh*\n\n" +
+                            "Halo Sdr/i *" + p.nama_peserta + "*,\n" +
+                            "❌ *MOHON MAAF, PERLU PERBAIKAN DATA*\n\n" +
+                            "Verifikasi pendaftaran Anda belum lolos dikarenakan:\n" +
+                            "👉 *" + alasanFinal + "*\n\n" +
+                            "Jangan khawatir! Anda masih memiliki kesempatan untuk memperbaiki data (Upload Ulang) melalui link di bawah ini:";
+                    linkAction = frontendUrl + "/login";
+                    break;
+
+                // KASUS 3: KONFIRMASI KEHADIRAN (H-3)
+                case "DITERIMA(H-3)":
+                    pesan = "👋 *Salam Seulamat dari Dishub Aceh*\n\n" +
+                            "Halo Sdr/i *" + p.nama_peserta + "*,\n" +
+                            "🚍 *PENTING: KONFIRMASI KEBERANGKATAN*\n\n" +
+                            "Jadwal mudik sudah dekat! Kami membutuhkan kepastian kehadiran Anda untuk penyiapan kursi bus.\n\n" +
+                            "⚠️ *Wajib Klik Link Ini Sekarang:*\n" +
+                            "(Jika tidak dikonfirmasi, kursi akan dialihkan ke peserta lain)";
                     linkAction = frontendUrl + "/konfirmasi/" + p.uuid;
                     break;
 
+                // DEFAULT
                 default:
-                    pesan = "Halo, ini informasi dari Panitia Mudik Gratis Dishub Aceh.";
+                    pesan = "👋 *Halo dari Dishub Aceh*\n\nInformasi terkait pendaftaran Mudik Gratis Anda.";
                     linkAction = frontendUrl;
                     break;
             }
 
-            String fullMessage = pesan + "\n" + linkAction;
+            // Gabungkan Pesan + Link + Footer
+            String fullMessage = pesan + "\n" + linkAction + footer;
+
+            // Encode URL agar karakter spasi/enter terbaca di WA
             return "https://wa.me/" + hpFormat + "?text=" + URLEncoder.encode(fullMessage, StandardCharsets.UTF_8.toString());
 
         } catch (Exception e) {

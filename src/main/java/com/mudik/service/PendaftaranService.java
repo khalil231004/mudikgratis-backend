@@ -61,19 +61,19 @@ public class PendaftaranService {
             throw new Exception("NIK berikut sudah terdaftar & aktif: " + String.join(", ", nikDuplikat));
         }
 
-        // Siapkan List
         List<PendaftaranMudik> listToSave = new ArrayList<>();
 
         for (int i = 0; i < jumlahPeserta; i++) {
             PendaftaranMudik p = new PendaftaranMudik();
             p.user = user;
             p.nama_peserta = form.nama_peserta.get(i).toUpperCase();
+            // Generate UUID untuk link konfirmasi nanti
+            p.uuid = UUID.randomUUID().toString();
 
             String rawNik = (form.nik_peserta != null && i < form.nik_peserta.size()) ? form.nik_peserta.get(i).trim() : "-";
             if (rawNik.length() > 16) rawNik = rawNik.substring(0, 16);
             p.nik_peserta = rawNik;
 
-            // Logic Umur
             try {
                 if (form.tanggal_lahir != null && i < form.tanggal_lahir.size()) {
                     LocalDate tgl = LocalDate.parse(form.tanggal_lahir.get(i));
@@ -95,7 +95,6 @@ public class PendaftaranService {
             String hp = (form.no_hp_peserta != null && i < form.no_hp_peserta.size()) ? form.no_hp_peserta.get(i) : user.no_hp;
             p.no_hp_peserta = hp;
 
-            // Upload File (Sebelum Lock)
             if (form.fotoBukti != null && i < form.fotoBukti.size()) {
                 FileUpload file = form.fotoBukti.get(i);
                 if (file != null && file.fileName() != null && !file.fileName().isEmpty()) {
@@ -109,9 +108,8 @@ public class PendaftaranService {
             listToSave.add(p);
         }
 
-        // 🔥 LOCK DB & UPDATE KUOTA TERISI
+        // LOCK DB
         Rute ruteLocked = Rute.findById(rute.rute_id, LockModeType.PESSIMISTIC_WRITE);
-
         if (ruteLocked.getSisaKuota() < jumlahPeserta) {
             throw new Exception("Mohon maaf, Kuota Rute baru saja habis!");
         }
@@ -121,11 +119,9 @@ public class PendaftaranService {
             p.persist();
         }
 
-        // Tambah Kuota Terisi
         if (ruteLocked.kuota_terisi == null) ruteLocked.kuota_terisi = 0;
         ruteLocked.kuota_terisi += jumlahPeserta;
 
-        // Pastikan tidak menyentuh kuota_total
         ruteLocked.persist();
     }
 
@@ -134,12 +130,11 @@ public class PendaftaranService {
     // =================================================================
     @Transactional
     public String prosesKonfirmasi(Long userId, List<Long> idsTetapIkut) throws Exception {
+        // Cari yang statusnya DITERIMA H-3 (Ini match dengan WhatsAppService case DITERIMA(H-3))
         List<PendaftaranMudik> keluarga = PendaftaranMudik.list("user.user_id = ?1 AND status_pendaftaran = 'DITERIMA H-3'", userId);
         if (keluarga.isEmpty()) throw new Exception("Tidak ada data DITERIMA H-3.");
 
         int countHadir = 0; int countBatal = 0;
-
-        // Ambil Rute sekali saja untuk lock
         Rute ruteLocked = null;
         if (!keluarga.isEmpty()) {
             ruteLocked = Rute.findById(keluarga.get(0).rute.rute_id, LockModeType.PESSIMISTIC_WRITE);
@@ -147,13 +142,10 @@ public class PendaftaranService {
 
         for (PendaftaranMudik p : keluarga) {
             if (idsTetapIkut.contains(p.pendaftaran_id)) {
-                // Konfirmasi: Masuk Bus (Kuota Fix nanti diatur saat assign bus, di sini cuma status)
                 p.status_pendaftaran = "TERVERIFIKASI/ SIAP BERANGKAT";
                 countHadir++;
             } else {
-                // Batal: Kurangi Kuota Terisi
                 p.status_pendaftaran = "DIBATALKAN";
-
                 if (ruteLocked != null && ruteLocked.kuota_terisi > 0) {
                     ruteLocked.kuota_terisi -= 1;
                 }
@@ -161,7 +153,6 @@ public class PendaftaranService {
             }
             p.persist();
         }
-
         return countHadir + " Siap Berangkat, " + countBatal + " Dibatalkan.";
     }
 
@@ -185,14 +176,12 @@ public class PendaftaranService {
             }
         }
 
-        // Ambil ulang kuota karena sebelumnya sudah dibalikin saat DITOLAK
         Rute r = Rute.findById(p.rute.rute_id, LockModeType.PESSIMISTIC_WRITE);
         if (r.getSisaKuota() <= 0) throw new Exception("Kuota Rute Penuh! Tidak bisa mengajukan ulang.");
 
         p.status_pendaftaran = "MENUNGGU VERIFIKASI";
         p.alasan_tolak = null;
 
-        // Tambah Kuota Terisi
         if (r.kuota_terisi == null) r.kuota_terisi = 0;
         r.kuota_terisi += 1;
 
@@ -210,8 +199,6 @@ public class PendaftaranService {
         if (!"DITOLAK".equals(p.status_pendaftaran) && !"DIBATALKAN".equals(p.status_pendaftaran)) {
             p.status_pendaftaran = "DITOLAK";
 
-            // 🔥 UPDATE KUOTA TERISI (KURANGI 1)
-            // Pastikan rute tidak null
             if (p.rute != null) {
                 Rute r = Rute.findById(p.rute.rute_id, LockModeType.PESSIMISTIC_WRITE);
                 if (r.kuota_terisi != null && r.kuota_terisi > 0) {
@@ -223,7 +210,7 @@ public class PendaftaranService {
     }
 
     // =================================================================
-    // 5. ADMIN: UPDATE STATUS KELUARGA (VERSI FINAL - ANTI JEBOL)
+    // 5. ADMIN: UPDATE STATUS KELUARGA (MANUAL)
     // =================================================================
     @Transactional
     public String updateStatusKeluarga(Long userId, String statusBaru, String alasan) throws Exception {
@@ -235,28 +222,20 @@ public class PendaftaranService {
         for (PendaftaranMudik p : keluarga) {
             String statusLama = p.status_pendaftaran;
 
-            // 🔥 SATPAM: JANGAN UBAH YANG SUDAH DITOLAK/BATAL JADI DITERIMA
-            // Kecuali admin memang mau merubah statusnya jadi DITOLAK lagi (update alasan)
-            // Atau admin mau RESET (Menunggu Verifikasi)
+            // Satpam: Jangan ubah yang sudah DITOLAK
             if (("DITOLAK".equals(statusLama) || "DIBATALKAN".equals(statusLama))
                     && !"DITOLAK".equalsIgnoreCase(statusBaru)
                     && !"MENUNGGU VERIFIKASI".equalsIgnoreCase(statusBaru)) {
-                continue; // ⛔ STOP! Lompati orang ini. Biarkan dia tetap DITOLAK.
+                continue;
             }
 
-            // Logic Kuota (Aman)
             if ("DITOLAK".equalsIgnoreCase(statusBaru)) {
                 if (alasan == null || alasan.isBlank()) throw new Exception("Alasan tolak wajib diisi!");
-
-                // Kalau status sebelumnya AKTIF, kurangi kuota
-                if ("MENUNGGU VERIFIKASI".equals(statusLama) || "DITERIMA H-3".equals(statusLama) || "DITERIMA".equals(statusLama)) {
-                    if (ruteLocked.kuota_terisi != null && ruteLocked.kuota_terisi > 0) {
-                        ruteLocked.kuota_terisi -= 1;
-                    }
+                if (!"DITOLAK".equals(statusLama) && !"DIBATALKAN".equals(statusLama)) {
+                    if (ruteLocked.kuota_terisi > 0) ruteLocked.kuota_terisi -= 1;
                 }
                 p.alasan_tolak = alasan;
             }
-            // Logic Reset (Ditolak -> Menunggu) -> Balikin Kuota
             else if (("DITOLAK".equals(statusLama) || "DIBATALKAN".equals(statusLama)) && "MENUNGGU VERIFIKASI".equals(statusBaru)) {
                 if (ruteLocked.getSisaKuota() <= 0) throw new Exception("Kuota sudah penuh!");
                 if (ruteLocked.kuota_terisi == null) ruteLocked.kuota_terisi = 0;
@@ -268,37 +247,76 @@ public class PendaftaranService {
             p.persist();
         }
 
-        // Return Link WA
-        String tipeWa = statusBaru.equals("DITOLAK") ? "TOLAK_DATA" : "TERIMA";
+        // 🔥 WA INTEGRATION FIX (Mapping Status DB -> Tipe Pesan WA)
+        String tipeWa = "TERIMA"; // Default (Login Link)
+
+        if ("DITOLAK".equals(statusBaru)) {
+            tipeWa = "TOLAK_DATA"; // Kirim Alasan
+        } else if ("DITERIMA H-3".equals(statusBaru)) { // Sesuaikan string DB kamu
+            tipeWa = "DITERIMA(H-3)"; // Kirim Link Konfirmasi UUID
+        }
+
         return whatsAppService.generateLink(keluarga.get(0).no_hp_peserta, tipeWa, keluarga.get(0), alasan);
     }
 
     // =================================================================
-    // 6. ADMIN: TOLAK KELUARGA (Batch)
+    // 6. ADMIN: VERIFIKASI CUSTOM (CHECKBOX)
     // =================================================================
     @Transactional
-    public String tolakPendaftaranKeluarga(Long userId, String alasan) throws Exception {
-        List<PendaftaranMudik> keluarga = PendaftaranMudik.list("user.user_id = ?1 AND status_pendaftaran NOT IN ('DITOLAK', 'DIBATALKAN')", userId);
-        if (keluarga.isEmpty()) throw new Exception("Tidak ada pendaftaran aktif untuk ditolak.");
+    public String verifikasiCustom(Long userId, List<Long> idsDitolak, String alasan) throws Exception {
+        List<PendaftaranMudik> keluarga = PendaftaranMudik.list("user.user_id = ?1", userId);
+        if (keluarga.isEmpty()) throw new Exception("Data tidak ditemukan.");
 
         Rute ruteLocked = Rute.findById(keluarga.get(0).rute.rute_id, LockModeType.PESSIMISTIC_WRITE);
 
-        for (PendaftaranMudik p : keluarga) {
-            p.status_pendaftaran = "DITOLAK";
-            p.alasan_tolak = alasan;
+        int countDitolak = 0;
 
-            // Bayi tidak makan kursi, jadi jangan kurangi kuota
-            if (!"BAYI".equalsIgnoreCase(p.kategori_penumpang)) {
-                if (ruteLocked.kuota_terisi != null && ruteLocked.kuota_terisi > 0) {
-                    ruteLocked.kuota_terisi -= 1;
+        for (PendaftaranMudik p : keluarga) {
+            String statusLama = p.status_pendaftaran;
+            boolean isRejected = idsDitolak.contains(p.pendaftaran_id);
+
+            // A. REJECT
+            if (isRejected) {
+                if (!"DITOLAK".equals(statusLama) && !"DIBATALKAN".equals(statusLama)) {
+                    if (!"BAYI".equalsIgnoreCase(p.kategori_penumpang)) {
+                        if (ruteLocked.kuota_terisi > 0) ruteLocked.kuota_terisi -= 1;
+                    }
                 }
+                p.status_pendaftaran = "DITOLAK";
+                p.alasan_tolak = alasan;
+                countDitolak++;
+            }
+            // B. ACCEPT (AUTO DITERIMA H-3 UNTUK KONFIRMASI)
+            else {
+                if ("DITOLAK".equals(statusLama) || "DIBATALKAN".equals(statusLama)) {
+                    if (ruteLocked.getSisaKuota() <= 0) throw new Exception("Gagal ACC. Kuota Penuh!");
+                    ruteLocked.kuota_terisi += 1;
+                }
+                // Ubah status ke H-3 agar dapat link konfirmasi
+                p.status_pendaftaran = "DITERIMA H-3";
+                p.alasan_tolak = null;
             }
             p.persist();
         }
 
-        return whatsAppService.generateLink(keluarga.get(0).no_hp_peserta, "TOLAK_DATA", keluarga.get(0), alasan);
+        // 🔥 WA INTEGRATION FIX
+        // Jika ada yang ditolak, kita kirim pesan TOLAK (General) agar mereka cek dashboard
+        // Jika semua diterima, kita kirim pesan DITERIMA(H-3) agar konfirmasi
+
+        String tipeWa;
+        String pesanAlasan = null;
+
+        if (countDitolak > 0) {
+            tipeWa = "TOLAK_DATA";
+            pesanAlasan = "Sebagian data penumpang tidak valid (" + alasan + "). Silakan cek Dashboard untuk detail dan perbaiki data.";
+        } else {
+            tipeWa = "DITERIMA(H-3)";
+        }
+
+        return whatsAppService.generateLink(keluarga.get(0).no_hp_peserta, tipeWa, keluarga.get(0), pesanAlasan);
     }
 
+    // HELPER
     private String uploadFileHelper(FileUpload fileUpload, String nik) throws IOException {
         File folder = new File(uploadDir);
         if (!folder.exists()) folder.mkdirs();
