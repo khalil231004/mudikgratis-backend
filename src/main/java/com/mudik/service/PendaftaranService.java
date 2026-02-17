@@ -67,7 +67,6 @@ public class PendaftaranService {
             PendaftaranMudik p = new PendaftaranMudik();
             p.user = user;
             p.nama_peserta = form.nama_peserta.get(i).toUpperCase();
-            // Generate UUID untuk link konfirmasi nanti
             p.uuid = UUID.randomUUID().toString();
 
             String rawNik = (form.nik_peserta != null && i < form.nik_peserta.size()) ? form.nik_peserta.get(i).trim() : "-";
@@ -130,7 +129,6 @@ public class PendaftaranService {
     // =================================================================
     @Transactional
     public String prosesKonfirmasi(Long userId, List<Long> idsTetapIkut) throws Exception {
-        // Cari yang statusnya DITERIMA H-3 (Ini match dengan WhatsAppService case DITERIMA(H-3))
         List<PendaftaranMudik> keluarga = PendaftaranMudik.list("user.user_id = ?1 AND status_pendaftaran = 'DITERIMA H-3'", userId);
         if (keluarga.isEmpty()) throw new Exception("Tidak ada data DITERIMA H-3.");
 
@@ -189,7 +187,7 @@ public class PendaftaranService {
     }
 
     // =================================================================
-    // 4. ADMIN: TOLAK PESERTA SATUAN
+    // 4. ADMIN: TOLAK PESERTA SATUAN (Individu)
     // =================================================================
     @Transactional
     public void adminTolakPeserta(Long pendaftaranId) {
@@ -247,20 +245,27 @@ public class PendaftaranService {
             p.persist();
         }
 
-        // 🔥 WA INTEGRATION FIX (Mapping Status DB -> Tipe Pesan WA)
-        String tipeWa = "TERIMA"; // Default (Login Link)
-
+        String tipeWa = "TERIMA";
         if ("DITOLAK".equals(statusBaru)) {
-            tipeWa = "TOLAK_DATA"; // Kirim Alasan
-        } else if ("DITERIMA H-3".equals(statusBaru)) { // Sesuaikan string DB kamu
-            tipeWa = "DITERIMA(H-3)"; // Kirim Link Konfirmasi UUID
+            tipeWa = "TOLAK_DATA";
+        } else if ("DITERIMA H-3".equals(statusBaru)) {
+            tipeWa = "DITERIMA(H-3)";
         }
 
         return whatsAppService.generateLink(keluarga.get(0).no_hp_peserta, tipeWa, keluarga.get(0), alasan);
     }
 
     // =================================================================
-    // 6. ADMIN: VERIFIKASI CUSTOM (CHECKBOX)
+    // 6. ADMIN: TOLAK KELUARGA (YANG HILANG) - RESTORED 🔥
+    // =================================================================
+    @Transactional
+    public String tolakPendaftaranKeluarga(Long userId, String alasan) throws Exception {
+        // Reuse logic dari updateStatusKeluarga biar konsisten
+        return updateStatusKeluarga(userId, "DITOLAK", alasan);
+    }
+
+    // =================================================================
+    // 7. ADMIN: VERIFIKASI CUSTOM (CHECKBOX)
     // =================================================================
     @Transactional
     public String verifikasiCustom(Long userId, List<Long> idsDitolak, String alasan) throws Exception {
@@ -292,16 +297,11 @@ public class PendaftaranService {
                     if (ruteLocked.getSisaKuota() <= 0) throw new Exception("Gagal ACC. Kuota Penuh!");
                     ruteLocked.kuota_terisi += 1;
                 }
-                // Ubah status ke H-3 agar dapat link konfirmasi
                 p.status_pendaftaran = "DITERIMA H-3";
                 p.alasan_tolak = null;
             }
             p.persist();
         }
-
-        // 🔥 WA INTEGRATION FIX
-        // Jika ada yang ditolak, kita kirim pesan TOLAK (General) agar mereka cek dashboard
-        // Jika semua diterima, kita kirim pesan DITERIMA(H-3) agar konfirmasi
 
         String tipeWa;
         String pesanAlasan = null;
