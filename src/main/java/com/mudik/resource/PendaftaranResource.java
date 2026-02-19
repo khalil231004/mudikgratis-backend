@@ -41,21 +41,25 @@ public class PendaftaranResource {
         if (idStr == null || idStr.isEmpty() || "undefined".equals(idStr)) {
             throw new WebApplicationException("User ID tidak valid/kosong", 400);
         }
+
+        // 🔥 FIX: Kalau header duplikat dikirim (misal "30, 30"), ambil nilai pertama saja
+        String cleaned = idStr.split(",")[0].trim().replace("\"", "");
+
+        if (cleaned.isEmpty() || "undefined".equals(cleaned)) {
+            throw new WebApplicationException("User ID tidak valid/kosong", 400);
+        }
+
         try {
             // Cek apakah ini Angka (ID lama)
-            return Long.parseLong(idStr);
+            return Long.parseLong(cleaned);
         } catch (NumberFormatException e) {
             // Kalau bukan angka, berarti UUID. Cari user berdasarkan UUID Pendaftaran
-            PendaftaranMudik p = PendaftaranMudik.find("uuid", idStr).firstResult();
+            PendaftaranMudik p = PendaftaranMudik.find("uuid", cleaned).firstResult();
             if (p != null) {
                 return p.user.user_id;
             }
 
-            // Opsional: Kalau User entity punya field uuid, cari disana juga
-            // User u = User.find("uuid", idStr).firstResult();
-            // if (u != null) return u.user_id;
-
-            throw new WebApplicationException("Data User tidak ditemukan untuk UUID: " + idStr, 404);
+            throw new WebApplicationException("Data User tidak ditemukan untuk UUID: " + cleaned, 404);
         }
     }
 
