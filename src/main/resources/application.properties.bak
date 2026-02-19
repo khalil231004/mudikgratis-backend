@@ -1,50 +1,76 @@
-# --- DATABASE CONFIG ---
 quarkus.datasource.db-kind=postgresql
 quarkus.datasource.username=${DB_USER}
 quarkus.datasource.password=${DB_PASSWORD}
 quarkus.datasource.jdbc.url=${DB_URL}
+quarkus.hibernate-orm.database.generation=update
 
-# Agar tabel update otomatis (Hati-hati di production, sebaiknya 'validate' atau 'none')
-quarkus.hibernate-orm.database.generation=validate
-quarkus.hibernate-orm.log.sql=true
-quarkus.hibernate-orm.panache.database.default-schema=public
-quarkus.hibernate-orm.sql-load-script=no-file
 
-#
-#
-# --- EMAIL CONFIG ---
+mp.jwt.verify.publickey.location=NONE
+mp.jwt.verify.issuer=https://dishubosrm.acehprov.go.id
+smallrye.jwt.sign.key=r7NmAExOMIt9qJiz0Hbyhf5f/lhUFcO8K4HhtSaqBHQ=
+smallrye.jwt.verify.key=${smallrye.jwt.sign.key}
+smallrye.jwt.verify.algorithm=HS256
+
+
+app.base.url=https://dishubosrm.acehprov.go.id
+app.frontend.url=https://seulamat.dishubaceh.com
+
+# --- EMAIL CONFIG FINAL ---
 quarkus.mailer.host=smtp.gmail.com
-quarkus.mailer.port=587
-quarkus.mailer.start-tls=REQUIRED
+quarkus.mailer.port=465
+quarkus.mailer.ssl=true
 quarkus.mailer.mock=false
 quarkus.mailer.from=${MAIL_USERNAME}
 quarkus.mailer.username=${MAIL_USERNAME}
 quarkus.mailer.password=${MAIL_PASSWORD}
 
-# --- SECURITY (JWT) ---
-mp.jwt.verify.publickey.location=NONE
-mp.jwt.verify.issuer=https://mudik-api.com
-smallrye.jwt.verify.key.location=NONE
-smallrye.jwt.sign.key=r7NmAExOMIt9qJiz0Hbyhf5f/lhUFcO8K4HhtSaqBHQ=
-
-# --- APP CONFIG ---
-app.base.url=https://seulamat.dishubaceh.com
-#app.base.url=https://172.10.20.189:8080
-
-quarkus.http.body.uploads-directory=uploads
-quarkus.http.static-resources.index-page=index.html
 quarkus.http.host=0.0.0.0
+# Folder upload wajib absolute path di VPS
+quarkus.http.body.uploads-directory=/opt/mudik-v2/uploads
+# Batas ukuran file upload (Set ke 20MB)
+quarkus.http.limits.max-body-size=20M
+# Timeout request diperlama (biar gak putus tengah jalan pas sinyal bapuk)
+quarkus.http.read-timeout=60s
 
-# Dev UI (Biar bisa diakses dari IP lain saat dev)
-quarkus.dev-ui.hosts=0.0.0.0
 
-# --- REST CLIENT ---
-quarkus.rest-client.osrm-api.url=http://router.project-osrm.org
-quarkus.rest-client.osrm-api.scope=jakarta.inject.Singleton
+quarkus.http.auth.proactive=false
 
-# --- SECURITY POLICY ---
-quarkus.http.auth.permission.authenticated.paths=/api/*
+# --- DAFTAR URL YANG BEBAS AKSES (PUBLIC) ---
+# Masukkan semua endpoint disini biar gak dicegat server
+# 1. Auth & Umum: Login, Register, Rute
+# 2. Pendaftaran User: Riwayat, Upload, QR Code
+# 3. Admin: Users, Pendaftar, Verifikasi, Kendaraan, Bus, Stats, Export
+quarkus.http.auth.permission.public.paths=\
+/api/auth/*,\
+/api/rute,\
+/api/rute/*,\
+/api/pendaftaran/riwayat,\
+/api/pendaftaran/uploads/*,\
+/api/pendaftaran/uuid/*,\
+/api/admin/users,\
+/api/admin/users/*,\
+/api/admin/pendaftar,\
+/api/admin/verifikasi-keluarga/*,\
+/api/admin/kendaraan,\
+/api/admin/kendaraan/*,\
+/api/admin/assign-bus,\
+/api/admin/stats,\
+/api/admin/export,
+
+# Izinkan semua path diatas (PERMIT)
+quarkus.http.auth.permission.public.policy=permit
+
+# --- PREFLIGHT OPTIONS — WAJIB PUBLIC ---
+# Browser mengirim OPTIONS tanpa Authorization header sebelum PUT/POST multipart.
+# Jika tidak diizinkan, Quarkus akan reject dengan 401 dan browser
+# melaporkannya sebagai CORS error (padahal sebenarnya 401 blocked preflight).
+# CorsFilter (@PreMatching) sudah menangkap OPTIONS dan langsung return 200,
+# tapi permission ini memastikan request OPTIONS tidak diblokir di layer Quarkus dulu.
+quarkus.http.auth.permission.preflight.paths=/api/*
+quarkus.http.auth.permission.preflight.policy=permit
+quarkus.http.auth.permission.preflight.methods=OPTIONS
+
+# --- DAFTAR URL YANG WAJIB LOGIN ---
+# Tambahkan /api/user/* disini aga Satpam tau endpoint ini butuh token
+quarkus.http.auth.permission.authenticated.paths=/api/user/*,/api/secure/*
 quarkus.http.auth.permission.authenticated.policy=authenticated
-
-# --- LIMIT UPLOAD ---
-quarkus.http.limits.max-body-size=5M
