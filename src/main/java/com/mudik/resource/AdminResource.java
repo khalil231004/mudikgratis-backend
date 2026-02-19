@@ -17,6 +17,7 @@ import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Path("/api/admin")
@@ -280,4 +281,123 @@ public class AdminResource {
             return Response.status(400).entity(Map.of("error", e.getMessage())).build();
         }
     }
-}
+
+    // =================================================================
+    // FIX 8: TAMBAH PENUMPANG OLEH ADMIN (tanpa batasan akun user)
+    // =================================================================
+    @POST
+    @Path("/tambah-penumpang")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Transactional
+    public Response tambahPenumpangAdmin(Map<String, Object> body) {
+        try {
+            Long ruteId = body.get("rute_id") != null ? Long.parseLong(body.get("rute_id").toString()) : null;
+            Long kendaraanId = body.get("kendaraan_id") != null ? Long.parseLong(body.get("kendaraan_id").toString()) : null;
+            String namaPeserta = (String) body.get("nama_peserta");
+            String nikPeserta = (String) body.get("nik_peserta");
+            String jenisKelamin = (String) body.getOrDefault("jenis_kelamin", "L");
+            String tanggalLahirStr = (String) body.get("tanggal_lahir");
+            String alamat = (String) body.getOrDefault("alamat_rumah", "-");
+            String noHp = (String) body.get("no_hp_peserta");
+            Long userAkunId = body.get("user_id") != null ? Long.parseLong(body.get("user_id").toString()) : null;
+
+            if (ruteId == null || namaPeserta == null || nikPeserta == null) {
+                return Response.status(400).entity(Map.of("error", "rute_id, nama_peserta, nik_peserta wajib diisi")).build();
+            }
+
+            com.mudik.model.Rute rute = com.mudik.model.Rute.findById(ruteId, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+            if (rute == null) return Response.status(404).entity(Map.of("error", "Rute tidak ditemukan")).build();
+            if (rute.getSisaKuota() <= 0) return Response.status(400).entity(Map.of("error", "Kuota rute penuh!")).build();
+
+            // Cek duplikat NIK
+            long cekNik = com.mudik.model.PendaftaranMudik.count("nik_peserta = ?1 AND status_pendaftaran NOT IN ('DIBATALKAN', 'DITOLAK')", nikPeserta.trim());
+            if (cekNik > 0) return Response.status(400).entity(Map.of("error", "NIK sudah terdaftar: " + nikPeserta)).build();
+
+            com.mudik.model.PendaftaranMudik p = new com.mudik.model.PendaftaranMudik();
+            p.rute = rute;
+            p.nama_peserta = namaPeserta.toUpperCase();
+            p.nik_peserta = nikPeserta.trim();
+            p.jenis_kelamin = jenisKelamin;
+            p.alamat_rumah = alamat;
+            p.no_hp_peserta = noHp;
+            p.status_pendaftaran = "MENUNGGU VERIFIKASI";
+            p.kode_booking = "ADM-" + System.currentTimeMillis();
+            p.uuid = java.util.UUID.randomUUID().toString();
+
+            if (tanggalLahirStr != null && !tanggalLahirStr.isBlank()) {
+                try {
+                    java.time.LocalDate tgl = java.time.LocalDate.parse(tanggalLahirStr);
+                    p.tanggal_lahir = tgl;
+                    int umur = java.time.Period.between(tgl, java.time.LocalDate.now()).getYears();
+                    p.kategori_penumpang = umur < 2 ? "BAYI" : (umur < 17 ? "ANAK" : "DEWASA");
+                } catch (Exception e2) { p.kategori_penumpang = "DEWASA"; }
+            } else { p.kategori_penumpang = "DEWASA"; }
+
+            // Assign ke user akun jika ada
+            if (userAkunId != null) {
+                com.mudik.model.User user = com.mudik.model.User.findById(userAkunId);
+                if (user != null) p.user = user;
+            }
+
+            // Assign bus jika ada
+            if (kendaraanId != null) {
+                com.mudik.model.Kendaraan bus = com.mudik.model.Kendaraan.findById(kendaraanId);
+                if (bus != null) {
+                    p.kendaraan = bus;
+                    if (bus.terisi == null) bus.terisi = 0;
+                    bus.terisi += 1;
+                    bus.persist();
+                }
+            }
+
+            p.persist();
+            rute.kuota_terisi = (rute.kuota_terisi == null ? 0 : rute.kuota_terisi) + 1;
+            rute.persist();
+
+            return Response.ok(Map.of("status", "BERHASIL", "pesan", "Penumpang " + namaPeserta + " berhasil ditambahkan oleh admin")).build();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Response.status(400).entity(Map.of("error", e.getMessage())).build();
+        }
+    }
+
+    // =================================================================
+    // FIX 10: NOTIFIKASI KUOTA PENUH KE SEMUA PENUMPANG RUTE
+    // =================================================================
+    @POST
+    @Path("/notif-kuota-penuh/{rute_id}")
+    public Response notifKuotaPenuh(@PathParam("rute_id") Long ruteId) {
+        try {
+            com.mudik.model.Rute rute = com.mudik.model.Rute.findById(ruteId);
+            if (rute == null) return Response.status(404).entity(Map.of("error", "Rute tidak ditemukan")).build();
+
+            if (rute.getSisaKuota() > 0) {
+                return Response.status(400).entity(Map.of("error", "Kuota rute belum penuh (sisa: " + rute.getSisaKuota() + ")")).build();
+            }
+
+            List<com.mudik.model.PendaftaranMudik> penumpang = com.mudik.model.PendaftaranMudik.list(
+                    "rute.rute_id = ?1 AND status_pendaftaran NOT IN ('DIBATALKAN', 'DITOLAK')", ruteId);
+
+            // Generate WA links untuk setiap penumpang (atau per keluarga)
+            Set<String> hpSudahDikirim = new java.util.HashSet<>();
+            List<String> links = new java.util.ArrayList<>();
+
+            for (com.mudik.model.PendaftaranMudik p : penumpang) {
+                String hp = (p.no_hp_peserta != null && p.no_hp_peserta.length() > 7)
+                        ? p.no_hp_peserta : (p.user != null ? p.user.no_hp : null);
+                if (hp != null && !hpSudahDikirim.contains(hp)) {
+                    String link = waService.generateKuotaPenuhLink(hp, p.nama_peserta, rute.tujuan);
+                    links.add(link);
+                    hpSudahDikirim.add(hp);
+                }
+            }
+
+            return Response.ok(Map.of(
+                    "status", "BERHASIL",
+                    "pesan", "Siap mengirim notifikasi ke " + links.size() + " nomor unik",
+                    "wa_links", links
+            )).build();
+        } catch (Exception e) {
+            return Response.status(400).entity(Map.of("error", e.getMessage())).build();
+        }
+    }}

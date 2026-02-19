@@ -32,6 +32,17 @@ public class RuteResource {
             map.put("tanggal_raw", r.tanggal_keberangkatan);
             map.put("waktu_berangkat", r.getFormattedDate());
 
+            // FIX 3: Pisahkan tanggal dan jam
+            if (r.tanggal_keberangkatan != null) {
+                java.time.ZoneId wib = java.time.ZoneId.of("Asia/Jakarta");
+                java.time.ZonedDateTime wibTime = r.tanggal_keberangkatan.atZone(java.time.ZoneId.of("UTC")).withZoneSameInstant(wib);
+                map.put("tanggal_berangkat", wibTime.toLocalDate().toString());
+                map.put("jam_berangkat", String.format("%02d:%02d WIB", wibTime.getHour(), wibTime.getMinute()));
+            } else {
+                map.put("tanggal_berangkat", "-");
+                map.put("jam_berangkat", "-");
+            }
+
             // Info Kuota Public
             map.put("kuota_total", r.kuota_total != null ? r.kuota_total : 0);
 
@@ -42,6 +53,9 @@ public class RuteResource {
             // Status Seat
             boolean isPenuh = (r.getSisaKuota() <= 0);
             map.put("status_seat", isPenuh ? "HABIS" : "TERSEDIA");
+
+            // FIX 11: Info portal
+            map.put("is_portal_open", r.is_portal_open != null ? r.is_portal_open : true);
 
             return map;
         }).collect(Collectors.toList());
@@ -74,6 +88,17 @@ public class RuteResource {
             map.put("tanggal_raw", r.tanggal_keberangkatan);
             map.put("waktu_berangkat", r.getFormattedDate());
 
+            // FIX 3: Pisahkan tanggal dan jam
+            if (r.tanggal_keberangkatan != null) {
+                java.time.ZoneId wib = java.time.ZoneId.of("Asia/Jakarta");
+                java.time.ZonedDateTime wibTime = r.tanggal_keberangkatan.atZone(java.time.ZoneId.of("UTC")).withZoneSameInstant(wib);
+                map.put("tanggal_berangkat", wibTime.toLocalDate().toString());
+                map.put("jam_berangkat", String.format("%02d:%02d WIB", wibTime.getHour(), wibTime.getMinute()));
+            } else {
+                map.put("tanggal_berangkat", "-");
+                map.put("jam_berangkat", "-");
+            }
+
             // 🔥 DETAIL KUOTA LENGKAP UTK ADMIN
             map.put("kuota_total", r.kuota_total != null ? r.kuota_total : 0);
             map.put("kuota_terisi", r.kuota_terisi != null ? r.kuota_terisi : 0);
@@ -82,6 +107,9 @@ public class RuteResource {
             // 🔥 UPDATE AMAN: Kirim dua-duanya biar AdminRute.tsx pasti muncul angkanya
             map.put("sisa_kuota", r.getSisaKuota());
             map.put("kuota_tersisa", r.getSisaKuota());
+
+            // FIX 11: Info portal pendaftaran
+            map.put("is_portal_open", r.is_portal_open != null ? r.is_portal_open : true);
 
             return map;
         }).collect(Collectors.toList());
@@ -150,5 +178,23 @@ public class RuteResource {
 
         rute.delete();
         return Response.ok(Map.of("status", "BERHASIL", "message", "Rute dihapus")).build();
+    }
+
+    // FIX 11: Endpoint buka/tutup portal pendaftaran per rute
+    @PUT
+    @Path("/{id}/portal")
+    @Transactional
+    public Response togglePortal(@PathParam("id") Long id, Map<String, Object> body) {
+        Rute rute = Rute.findById(id);
+        if (rute == null) return Response.status(404).entity(Map.of("error", "Rute tidak ditemukan")).build();
+
+        Object val = body.get("is_portal_open");
+        if (val == null) return Response.status(400).entity(Map.of("error", "Field is_portal_open wajib diisi")).build();
+
+        rute.is_portal_open = Boolean.parseBoolean(val.toString());
+        rute.persist();
+
+        String kondisi = rute.is_portal_open ? "DIBUKA" : "DITUTUP";
+        return Response.ok(Map.of("status", "BERHASIL", "message", "Portal pendaftaran rute " + rute.tujuan + " berhasil " + kondisi)).build();
     }
 }

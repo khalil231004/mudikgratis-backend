@@ -22,10 +22,12 @@ public class TiketResource {
             return Response.status(404).entity("Data pendaftaran tidak ditemukan").build();
         }
 
-        // 1. CEK STATUS (Harus TERKONFIRMASI / SIAP BERANGKAT)
-        // Kalau masih "DITERIMA" doang (belum konfirmasi WA), tolak.
-        if (!"TERKONFIRMASI".equalsIgnoreCase(pendaftar.status_pendaftaran)) {
-            return Response.status(400).entity("Tiket belum tersedia. Silakan lakukan KONFIRMASI KEHADIRAN via WhatsApp (H-3) terlebih dahulu.").build();
+        // FIX 2: Tiket bisa didownload saat sudah plotting (status TERVERIFIKASI/ SIAP BERANGKAT atau TERKONFIRMASI)
+        boolean statusValid = "TERKONFIRMASI".equalsIgnoreCase(pendaftar.status_pendaftaran)
+                || "TERVERIFIKASI/ SIAP BERANGKAT".equalsIgnoreCase(pendaftar.status_pendaftaran);
+
+        if (!statusValid) {
+            return Response.status(400).entity("Tiket belum tersedia. Status pendaftaran Anda belum siap untuk download tiket.").build();
         }
 
         // 2. CEK BUS / KENDARAAN (Ini kuncinya!)

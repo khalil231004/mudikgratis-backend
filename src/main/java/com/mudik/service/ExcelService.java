@@ -1,6 +1,7 @@
 package com.mudik.service;
 
 import com.mudik.model.PendaftaranMudik;
+import com.mudik.model.Kendaraan;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -167,5 +168,71 @@ public class ExcelService {
         font.setBold(true);
         style.setFont(font);
         return style;
+    }
+
+    // FIX 5: Generate Manifest Per Bus
+    public byte[] generateManifestBus(Kendaraan bus, List<PendaftaranMudik> dataList) throws IOException {
+        try (Workbook workbook = new XSSFWorkbook()) {
+            Sheet sheet = workbook.createSheet("Manifest " + (bus.nama_armada != null ? bus.nama_armada : "Bus"));
+            CellStyle headerStyle = createHeaderStyle(workbook);
+            CellStyle boldStyle = workbook.createCellStyle();
+            Font f = workbook.createFont(); f.setBold(true); boldStyle.setFont(f);
+
+            // Header Info Bus
+            int r = 0;
+            Row rowJudul = sheet.createRow(r++);
+            Cell cellJudul = rowJudul.createCell(0);
+            cellJudul.setCellValue("MANIFEST PENUMPANG BUS: " + (bus.nama_armada != null ? bus.nama_armada.toUpperCase() : "-"));
+            cellJudul.setCellStyle(boldStyle);
+
+            sheet.createRow(r).createCell(0).setCellValue("Plat Nomor: " + (bus.plat_nomor != null ? bus.plat_nomor : "-"));
+            sheet.getRow(r++).createCell(3).setCellValue("Nama Supir: " + (bus.nama_supir != null ? bus.nama_supir : "-"));
+            sheet.createRow(r).createCell(0).setCellValue("Kapasitas: " + (bus.kapasitas_total != null ? bus.kapasitas_total : 0));
+            sheet.getRow(r++).createCell(3).setCellValue("Kontak Supir: " + (bus.kontak_supir != null ? bus.kontak_supir : "-"));
+            sheet.createRow(r++).createCell(0).setCellValue("Rute: " + (bus.rute != null ? bus.rute.asal + " ➜ " + bus.rute.tujuan : "-"));
+            sheet.createRow(r++).createCell(0).setCellValue("Keberangkatan: " + (bus.rute != null ? bus.rute.getFormattedDate() : "-"));
+
+            // Summary
+            long dewasa = dataList.stream().filter(p -> "DEWASA".equalsIgnoreCase(p.kategori_penumpang)).count();
+            long anak = dataList.stream().filter(p -> "ANAK".equalsIgnoreCase(p.kategori_penumpang)).count();
+            long bayi = dataList.stream().filter(p -> "BAYI".equalsIgnoreCase(p.kategori_penumpang)).count();
+
+            r++;
+            Row rHead = sheet.createRow(r++);
+            String[] sumCols = {"Total", "Dewasa", "Anak", "Bayi"};
+            for (int i = 0; i < sumCols.length; i++) { Cell c = rHead.createCell(i); c.setCellValue(sumCols[i]); c.setCellStyle(headerStyle); }
+            Row rVal = sheet.createRow(r++);
+            rVal.createCell(0).setCellValue(dataList.size());
+            rVal.createCell(1).setCellValue(dewasa);
+            rVal.createCell(2).setCellValue(anak);
+            rVal.createCell(3).setCellValue(bayi);
+
+            r++;
+            // Data Penumpang
+            Row tableHeader = sheet.createRow(r++);
+            String[] cols = {"No", "Nama Peserta", "NIK", "Kategori", "JK", "Alamat", "No HP", "Kode Booking", "Status"};
+            for (int i = 0; i < cols.length; i++) { Cell c = tableHeader.createCell(i); c.setCellValue(cols[i]); c.setCellStyle(headerStyle); }
+
+            int no = 1;
+            for (PendaftaranMudik p : dataList) {
+                Row row = sheet.createRow(r++);
+                row.createCell(0).setCellValue(no++);
+                row.createCell(1).setCellValue(p.nama_peserta != null ? p.nama_peserta : "-");
+                row.createCell(2).setCellValue(p.nik_peserta != null ? p.nik_peserta : "-");
+                row.createCell(3).setCellValue(p.kategori_penumpang != null ? p.kategori_penumpang : "-");
+                row.createCell(4).setCellValue(p.jenis_kelamin != null ? p.jenis_kelamin : "-");
+                row.createCell(5).setCellValue(p.alamat_rumah != null ? p.alamat_rumah : "-");
+                String hp = (p.no_hp_peserta != null && p.no_hp_peserta.length() > 5) ? p.no_hp_peserta : (p.user != null ? p.user.no_hp : "-");
+                row.createCell(6).setCellValue(hp != null ? hp : "-");
+                row.createCell(7).setCellValue(p.kode_booking != null ? p.kode_booking : "-");
+                row.createCell(8).setCellValue(p.status_pendaftaran != null ? p.status_pendaftaran : "-");
+            }
+
+            for (int i = 0; i < cols.length; i++) sheet.autoSizeColumn(i);
+
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            workbook.write(out);
+            return out.toByteArray();
+        }
     }
 }

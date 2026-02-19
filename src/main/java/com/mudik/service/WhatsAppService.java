@@ -35,7 +35,9 @@ public class WhatsAppService {
 
         String pesan = "";
         String linkAction = "";
-        String footer = "\n\n_Pesan otomatis Sistem Mudik Gratis Dishub Aceh_";
+        // FIX 9: Tambahkan Hotline nomor
+        String hotline = "📞 *Hotline Mudik Gratis Dishub Aceh:*\n0811-6800-XXX (WhatsApp)";
+        String footer = "\n\n" + hotline + "\n\n_Pesan otomatis Sistem Mudik Gratis Dishub Aceh_";
 
         try {
             switch (tipe) {
@@ -46,6 +48,7 @@ public class WhatsAppService {
                             "Mohon maaf, Verifikasi Pendaftaran Mudik Anda *BELUM LENGKAP*.\n\n" +
                             "Catatan Petugas:\n" +
                             "👉 *" + alasanFinal + "*\n\n" +
+                            "ℹ️ *Perbaikan dapat dilakukan selama kuota masih tersedia.*\n\n" +
                             "Mohon segera perbaiki data Anda melalui link dashboard berikut:";
                     linkAction = baseUrl + "/login";
                     break;
@@ -79,4 +82,24 @@ public class WhatsAppService {
             return "#";
         }
     }
-}
+
+    // FIX 10: Notifikasi kuota penuh ke penumpang
+    public String generateKuotaPenuhLink(String noHp, String namaPeserta, String namaRute) {
+        if (noHp == null || noHp.length() < 7) return "#";
+        String hpFormat = noHp.replaceAll("[^0-9]", "");
+        if (hpFormat.startsWith("0")) hpFormat = "62" + hpFormat.substring(1);
+
+        String baseUrl = frontendUrlOpt.orElse("https://dishubosrm.acehprov.go.id");
+        String hotline = "📞 *Hotline:* 0811-6800-XXX";
+        try {
+            String pesan = "👋 *Salam Seulamat dari Dishub Aceh*\n\n" +
+                    "Yth. Sdr/i *" + namaPeserta + "*,\n" +
+                    "Kami informasikan bahwa *KUOTA RUTE " + namaRute.toUpperCase() + " TELAH PENUH*.\n\n" +
+                    "Mohon maaf atas ketidaknyamanannya. Pantau terus dashboard untuk informasi ketersediaan kursi.\n\n" +
+                    hotline + "\n\n" +
+                    "_Pesan otomatis Sistem Mudik Gratis Dishub Aceh_";
+            return "https://wa.me/" + hpFormat + "?text=" + URLEncoder.encode(pesan, StandardCharsets.UTF_8.toString());
+        } catch (Exception e) {
+            return "#";
+        }
+    }}

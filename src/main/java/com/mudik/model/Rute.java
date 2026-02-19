@@ -3,6 +3,8 @@ package com.mudik.model;
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
 import java.util.List;
@@ -32,6 +34,10 @@ public class Rute extends PanacheEntityBase {
     // 3. Kursi yang sudah Fix Berangkat (Status: KONFIRMASI H-3)
     public Integer kuota_fix;
 
+    // 4. Portal pendaftaran (FIX 11: buka/tutup portal)
+    @Column(columnDefinition = "BOOLEAN DEFAULT TRUE")
+    public Boolean is_portal_open = true;
+
     // Helper: Hitung sisa kursi real-time untuk Frontend
     public int getSisaKuota() {
         if (kuota_total == null) kuota_total = 0;
@@ -44,13 +50,16 @@ public class Rute extends PanacheEntityBase {
     @OneToMany(mappedBy = "rute", cascade = CascadeType.ALL)
     public List<Kendaraan> listKendaraan;
 
-    // Helper Format Tanggal (JSON/PDF)
+    // Helper Format Tanggal (JSON/PDF) - FIX 7: WIB Timezone
     public String getFormattedDate() {
         if (tanggal_keberangkatan == null) return "Jadwal Belum Rilis";
         try {
-            return DateTimeFormatter.ofPattern("dd MMMM yyyy HH:mm")
+            // Konversi ke WIB (UTC+7)
+            ZoneId wib = ZoneId.of("Asia/Jakarta");
+            ZonedDateTime wibTime = tanggal_keberangkatan.atZone(ZoneId.of("UTC")).withZoneSameInstant(wib);
+            return DateTimeFormatter.ofPattern("dd MMMM yyyy HH:mm 'WIB'")
                     .withLocale(new Locale("id", "ID"))
-                    .format(tanggal_keberangkatan);
+                    .format(wibTime);
         } catch (Exception e) {
             return tanggal_keberangkatan.toString();
         }

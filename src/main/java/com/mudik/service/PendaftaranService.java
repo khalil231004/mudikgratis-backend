@@ -42,6 +42,11 @@ public class PendaftaranService {
             throw new Exception("Kuota Rute Habis! Sisa tiket: " + rute.getSisaKuota());
         }
 
+        // FIX 11: Cek portal pendaftaran
+        if (rute.is_portal_open != null && !rute.is_portal_open) {
+            throw new Exception("Maaf, portal pendaftaran untuk rute ini saat ini DITUTUP. Silakan hubungi Dishub Aceh.");
+        }
+
         // Cek Limit Akun
         long sudahDaftar = PendaftaranMudik.count("user.user_id = ?1 AND status_pendaftaran NOT IN ('DITOLAK', 'DIBATALKAN')", user.user_id);
         if (sudahDaftar + jumlahPeserta > 6) {
@@ -88,7 +93,14 @@ public class PendaftaranService {
                     LocalDate tgl = LocalDate.parse(form.tanggal_lahir.get(i));
                     p.tanggal_lahir = tgl;
                     int umur = Period.between(tgl, LocalDate.now()).getYears();
-                    p.kategori_penumpang = (umur < 5) ? "ANAK" : "DEWASA";
+                    // FIX 1: Anak = umur < 17, Bayi = umur < 2
+                    if (umur < 2) {
+                        p.kategori_penumpang = "BAYI";
+                    } else if (umur < 17) {
+                        p.kategori_penumpang = "ANAK";
+                    } else {
+                        p.kategori_penumpang = "DEWASA";
+                    }
                 } else {
                     p.tanggal_lahir = LocalDate.now();
                     p.kategori_penumpang = "DEWASA";
@@ -177,6 +189,22 @@ public class PendaftaranService {
 
         if (form.nama_peserta != null) p.nama_peserta = form.nama_peserta.get(0).toUpperCase();
         if (form.nik_peserta != null) p.nik_peserta = form.nik_peserta.get(0);
+
+        // FIX 1: Update tanggal_lahir dan recalculate kategori penumpang saat edit
+        if (form.tanggal_lahir != null && !form.tanggal_lahir.isEmpty() && !form.tanggal_lahir.get(0).isBlank()) {
+            try {
+                LocalDate tgl = LocalDate.parse(form.tanggal_lahir.get(0));
+                p.tanggal_lahir = tgl;
+                int umur = Period.between(tgl, LocalDate.now()).getYears();
+                if (umur < 2) {
+                    p.kategori_penumpang = "BAYI";
+                } else if (umur < 17) {
+                    p.kategori_penumpang = "ANAK";
+                } else {
+                    p.kategori_penumpang = "DEWASA";
+                }
+            } catch (Exception ignored) {}
+        }
 
         if (form.fotoBukti != null && !form.fotoBukti.isEmpty()) {
             FileUpload file = form.fotoBukti.get(0);
