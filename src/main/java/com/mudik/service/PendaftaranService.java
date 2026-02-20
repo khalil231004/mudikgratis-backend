@@ -1,6 +1,7 @@
 package com.mudik.service;
 
 import com.mudik.model.PendaftaranMudik;
+import com.mudik.model.PortalConfig;
 import com.mudik.model.Rute;
 import com.mudik.model.User;
 import com.mudik.resource.PendaftaranResource.PendaftaranMultipartForm;
@@ -42,7 +43,21 @@ public class PendaftaranService {
             throw new Exception("Kuota Rute Habis! Sisa tiket: " + rute.getSisaKuota());
         }
 
-        // FIX 11: Cek portal pendaftaran
+        // ── GLOBAL PORTAL CHECK ────────────────────────────────
+        PortalConfig portalCfg = PortalConfig.getInstance();
+        if (!Boolean.TRUE.equals(portalCfg.sesi_aktif)) {
+            throw new Exception(portalCfg.pesan_sesi_berakhir != null
+                    ? portalCfg.pesan_sesi_berakhir
+                    : "Program Mudik Gratis telah berakhir.");
+        }
+        if (!Boolean.TRUE.equals(portalCfg.portal_mudik_open)) {
+            throw new Exception(portalCfg.pesan_mudik_tutup != null
+                    ? portalCfg.pesan_mudik_tutup
+                    : "Pendaftaran Mudik Gratis saat ini ditutup.");
+        }
+        // ── END GLOBAL PORTAL CHECK ────────────────────────────
+
+        // FIX 11: Cek portal pendaftaran per-rute
         if (rute.is_portal_open != null && !rute.is_portal_open) {
             throw new Exception("Maaf, portal pendaftaran untuk rute ini saat ini DITUTUP. Silakan hubungi Dishub Aceh.");
         }

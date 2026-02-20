@@ -2,6 +2,7 @@ package com.mudik.resource;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.mudik.model.User;
+import com.mudik.model.PortalConfig;
 import com.mudik.service.AuthService;
 import io.quarkus.elytron.security.common.BcryptUtil;
 import io.quarkus.mailer.Mail;
@@ -74,6 +75,26 @@ public class AuthResource {
     @Transactional
     public Response register(RegisterRequest req) {
         try {
+            // ── PORTAL CHECK: register akun ─────────────────────────
+            PortalConfig portalCfg = PortalConfig.getInstance();
+            if (!Boolean.TRUE.equals(portalCfg.sesi_aktif)) {
+                return Response.status(403).entity(Map.of(
+                        "error", portalCfg.pesan_sesi_berakhir != null
+                                ? portalCfg.pesan_sesi_berakhir
+                                : "Program Mudik Gratis telah berakhir.",
+                        "portal_type", "SESI_BERAKHIR"
+                )).build();
+            }
+            if (!Boolean.TRUE.equals(portalCfg.portal_register_open)) {
+                return Response.status(403).entity(Map.of(
+                        "error", portalCfg.pesan_register_tutup != null
+                                ? portalCfg.pesan_register_tutup
+                                : "Pendaftaran akun baru ditutup.",
+                        "portal_type", "REGISTER_TUTUP"
+                )).build();
+            }
+            // ── END PORTAL CHECK ────────────────────────────────────
+
             User userBaru = authService.registerUser(
                     req.nama_lengkap, req.email, req.password,
                     req.nik, req.no_hp, req.jenis_kelamin
