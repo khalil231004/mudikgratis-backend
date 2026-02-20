@@ -10,28 +10,23 @@ import jakarta.ws.rs.ext.Provider;
 import java.io.IOException;
 
 /**
- * CORS Filter — dua filter sekaligus:
+ * CorsFilter — backup filter untuk memastikan CORS header selalu ada.
  *
- * 1. ContainerRequestFilter (@PreMatching):
- *    Mencegat OPTIONS preflight SEBELUM auth check berjalan.
- *    Langsung return 200 + CORS headers agar browser puas.
- *    Tanpa ini, PUT/POST multipart dari frontend akan kena 401
- *    karena preflight tidak membawa Authorization header.
+ * CATATAN: CORS utama ditangani oleh Quarkus built-in di application.properties
+ * (quarkus.http.cors=true). Filter ini hanya backup untuk edge case.
  *
- * 2. ContainerResponseFilter:
- *    Menambahkan CORS headers ke semua response normal (GET/POST/PUT/DELETE).
+ * @PreMatching memastikan OPTIONS preflight ditangkap SEBELUM auth check,
+ * sehingga browser tidak kena 401 saat kirim preflight tanpa Authorization header.
  */
 @Provider
 @PreMatching
 public class CorsFilter implements ContainerRequestFilter, ContainerResponseFilter {
 
-    private static final String ORIGIN      = "https://seulamat.dishubaceh.com";
-    private static final String ALLOW_HDR   = "origin, content-type, accept, authorization, userid, x-requested-with";
-    private static final String ALLOW_MTD   = "GET, POST, PUT, DELETE, OPTIONS, HEAD, PATCH";
+    private static final String ORIGIN    = "https://seulamat.dishubaceh.com";
+    private static final String ALLOW_HDR = "origin,content-type,accept,authorization,userid,x-requested-with";
+    private static final String ALLOW_MTD = "GET,POST,PUT,DELETE,OPTIONS,HEAD,PATCH";
 
-    // ----------------------------------------------------------------
-    // 1. REQUEST FILTER — tangkap OPTIONS sebelum auth
-    // ----------------------------------------------------------------
+    // Tangkap OPTIONS preflight sebelum auth layer
     @Override
     public void filter(ContainerRequestContext req) throws IOException {
         if ("OPTIONS".equalsIgnoreCase(req.getMethod())) {
@@ -41,15 +36,13 @@ public class CorsFilter implements ContainerRequestFilter, ContainerResponseFilt
                             .header("Access-Control-Allow-Headers",     ALLOW_HDR)
                             .header("Access-Control-Allow-Methods",     ALLOW_MTD)
                             .header("Access-Control-Allow-Credentials", "true")
-                            .header("Access-Control-Max-Age",           "86400") // cache preflight 1 hari
+                            .header("Access-Control-Max-Age",           "86400")
                             .build()
             );
         }
     }
 
-    // ----------------------------------------------------------------
-    // 2. RESPONSE FILTER — tambahkan CORS headers ke semua response
-    // ----------------------------------------------------------------
+    // Tambahkan CORS headers ke semua response
     @Override
     public void filter(ContainerRequestContext req, ContainerResponseContext res) throws IOException {
         res.getHeaders().putSingle("Access-Control-Allow-Origin",      ORIGIN);
