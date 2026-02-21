@@ -43,12 +43,12 @@ public class FeedbackResource {
     public Response getFeedbackPublik(@QueryParam("limit") @DefaultValue("10") int limit) {
         // FIX: gunakan JPQL eksplisit agar boolean comparison benar di semua DB
         List<Feedback> list = Feedback.find(
-            "FROM Feedback f WHERE f.disetujui = true ORDER BY f.dikirim_at DESC"
+                "FROM Feedback f WHERE f.disetujui = true ORDER BY f.dikirim_at DESC"
         ).list();
 
         List<Map<String, Object>> result = toMapList(list.stream()
-            .limit(limit)
-            .collect(Collectors.toList()));
+                .limit(limit)
+                .collect(Collectors.toList()));
 
         return Response.ok(result).build();
     }
@@ -58,12 +58,12 @@ public class FeedbackResource {
     @Path("/publik/bintang5")
     public Response getFeedbackBintang5(@QueryParam("limit") @DefaultValue("6") int limit) {
         List<Feedback> list = Feedback.find(
-            "FROM Feedback f WHERE f.disetujui = true AND f.rating = 5 ORDER BY f.dikirim_at DESC"
+                "FROM Feedback f WHERE f.disetujui = true AND f.rating = 5 ORDER BY f.dikirim_at DESC"
         ).list();
 
         List<Map<String, Object>> result = toMapList(list.stream()
-            .limit(limit)
-            .collect(Collectors.toList()));
+                .limit(limit)
+                .collect(Collectors.toList()));
 
         return Response.ok(result).build();
     }
@@ -74,12 +74,12 @@ public class FeedbackResource {
     public Response getStats() {
         long total = Feedback.count("disetujui = true");
         Double avg = (Double) Feedback.getEntityManager()
-            .createQuery("SELECT AVG(f.rating) FROM Feedback f WHERE f.disetujui = true")
-            .getSingleResult();
+                .createQuery("SELECT AVG(f.rating) FROM Feedback f WHERE f.disetujui = true")
+                .getSingleResult();
 
         return Response.ok(Map.of(
-            "total_ulasan", total,
-            "rata_rata", avg != null ? Math.round(avg * 10.0) / 10.0 : 0.0
+                "total_ulasan", total,
+                "rata_rata", avg != null ? Math.round(avg * 10.0) / 10.0 : 0.0
         )).build();
     }
 
@@ -87,8 +87,8 @@ public class FeedbackResource {
     @POST
     @Transactional
     public Response kirimFeedback(
-        @HeaderParam("userId") String userIdStr,
-        Map<String, Object> body
+            @HeaderParam("userId") String userIdStr,
+            Map<String, Object> body
     ) {
         try {
             if (!body.containsKey("rating")) {
@@ -119,24 +119,24 @@ public class FeedbackResource {
                     if (user != null) {
                         fb.user = user;
                         fb.nama_pengirim = body.containsKey("nama_pengirim")
-                            ? body.get("nama_pengirim").toString()
-                            : user.nama_lengkap;
+                                ? body.get("nama_pengirim").toString()
+                                : user.nama_lengkap;
                     }
                 } catch (NumberFormatException ignored) {}
             }
 
             if (fb.nama_pengirim == null || fb.nama_pengirim.isBlank()) {
                 fb.nama_pengirim = body.containsKey("nama_pengirim")
-                    ? body.get("nama_pengirim").toString()
-                    : "Anonim";
+                        ? body.get("nama_pengirim").toString()
+                        : "Anonim";
             }
 
             fb.disetujui = false; // Default belum disetujui, admin harus approve
             fb.persist();
 
             return Response.ok(Map.of(
-                "status", "BERHASIL",
-                "pesan", "Terima kasih atas feedback Anda! Akan ditampilkan setelah disetujui admin."
+                    "status", "BERHASIL",
+                    "pesan", "Terima kasih atas feedback Anda! Akan ditampilkan setelah disetujui admin."
             )).build();
 
         } catch (Exception e) {
@@ -148,13 +148,26 @@ public class FeedbackResource {
     // ADMIN
     // ================================================================
 
-    /** GET /api/feedback/admin — semua feedback */
-    // FIX: path diganti /list-admin agar tidak konflik dengan /{id}/setujui di JAX-RS routing
+    /**
+     * GET /api/feedback/list-admin — semua feedback untuk admin panel
+     * Path pakai /list-admin agar tidak konflik dengan @DELETE /{id} di JAX-RS routing.
+     */
     @GET
     @Path("/list-admin")
     public Response getAllAdmin() {
         List<Feedback> list = Feedback.find("FROM Feedback f ORDER BY f.dikirim_at DESC").list();
         return Response.ok(toMapList(list)).build();
+    }
+
+    /**
+     * GET /api/feedback/admin — alias untuk /list-admin (backward compatibility).
+     * Dibuat terpisah karena JAX-RS tidak bisa punya dua @Path("/admin") dan @Path("/{id}") di kelas yang sama
+     * tanpa explicit @GET — endpoint ini mencegah 405 Method Not Allowed dari cache browser / request lama.
+     */
+    @GET
+    @Path("/admin")
+    public Response getAllAdminAlias() {
+        return getAllAdmin();
     }
 
     /** PUT /api/feedback/{id}/setujui — toggle setujui/batalkan */
@@ -166,14 +179,14 @@ public class FeedbackResource {
         if (fb == null) return Response.status(404).entity(Map.of("error", "Feedback tidak ditemukan")).build();
 
         boolean setujui = body.containsKey("disetujui")
-            && Boolean.parseBoolean(body.get("disetujui").toString());
+                && Boolean.parseBoolean(body.get("disetujui").toString());
         fb.disetujui = setujui;
         fb.persist();
 
         return Response.ok(Map.of(
-            "status", "BERHASIL",
-            "disetujui", fb.disetujui,
-            "pesan", setujui ? "Feedback disetujui dan akan tampil di halaman utama" : "Persetujuan dibatalkan"
+                "status", "BERHASIL",
+                "disetujui", fb.disetujui,
+                "pesan", setujui ? "Feedback disetujui dan akan tampil di halaman utama" : "Persetujuan dibatalkan"
         )).build();
     }
 
