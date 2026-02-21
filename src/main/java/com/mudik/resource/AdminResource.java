@@ -236,19 +236,21 @@ public class AdminResource {
                     .getSingleResult();
         } catch (Exception ignored) {}
 
-        return Response.ok(Map.of(
-                "total_masuk", totalPendaftar,
-                "total_diterima", totalDiterima,
-                "total_siap", totalSiap,
-                "total_ditolak", totalDitolak,
-                "total_menunggu", totalMenunggu,
-                "sisa_kuota_global", sisaKuotaGlobal,
-                "total_rute", totalRute,
-                "total_armada", totalArmada,
-                "total_feedback", totalFeedback,
-                "rata_rata_rating", avgRating != null ? Math.round(avgRating * 10.0) / 10.0 : 0.0,
-                "detail_rute", statsRute
-        )).build();
+        // 🔥 FIX: Pakai HashMap untuk respon lebih dari 10 key
+        Map<String, Object> responseData = new HashMap<>();
+        responseData.put("total_masuk", totalPendaftar);
+        responseData.put("total_diterima", totalDiterima);
+        responseData.put("total_siap", totalSiap);
+        responseData.put("total_ditolak", totalDitolak);
+        responseData.put("total_menunggu", totalMenunggu);
+        responseData.put("sisa_kuota_global", sisaKuotaGlobal);
+        responseData.put("total_rute", totalRute);
+        responseData.put("total_armada", totalArmada);
+        responseData.put("total_feedback", totalFeedback);
+        responseData.put("rata_rata_rating", avgRating != null ? Math.round(avgRating * 10.0) / 10.0 : 0.0);
+        responseData.put("detail_rute", statsRute);
+
+        return Response.ok(responseData).build();
     }
 
     // =================================================================
@@ -419,4 +421,5 @@ public class AdminResource {
         } catch (Exception e) {
             return Response.status(400).entity(Map.of("error", e.getMessage())).build();
         }
-    }}
+    }
+}
