@@ -41,8 +41,24 @@ public class FeedbackResource {
     @GET
     @Path("/publik")
     public Response getFeedbackPublik(@QueryParam("limit") @DefaultValue("10") int limit) {
+        // FIX: gunakan JPQL eksplisit agar boolean comparison benar di semua DB
         List<Feedback> list = Feedback.find(
-            "disetujui = true ORDER BY dikirim_at DESC"
+            "FROM Feedback f WHERE f.disetujui = true ORDER BY f.dikirim_at DESC"
+        ).list();
+
+        List<Map<String, Object>> result = toMapList(list.stream()
+            .limit(limit)
+            .collect(Collectors.toList()));
+
+        return Response.ok(result).build();
+    }
+
+    /** GET /api/feedback/publik/bintang5 — khusus komentar bintang 5 (disetujui admin) */
+    @GET
+    @Path("/publik/bintang5")
+    public Response getFeedbackBintang5(@QueryParam("limit") @DefaultValue("6") int limit) {
+        List<Feedback> list = Feedback.find(
+            "FROM Feedback f WHERE f.disetujui = true AND f.rating = 5 ORDER BY f.dikirim_at DESC"
         ).list();
 
         List<Map<String, Object>> result = toMapList(list.stream()
@@ -133,10 +149,11 @@ public class FeedbackResource {
     // ================================================================
 
     /** GET /api/feedback/admin — semua feedback */
+    // FIX: path diganti /list-admin agar tidak konflik dengan /{id}/setujui di JAX-RS routing
     @GET
-    @Path("/admin")
+    @Path("/list-admin")
     public Response getAllAdmin() {
-        List<Feedback> list = Feedback.find("ORDER BY dikirim_at DESC").list();
+        List<Feedback> list = Feedback.find("FROM Feedback f ORDER BY f.dikirim_at DESC").list();
         return Response.ok(toMapList(list)).build();
     }
 

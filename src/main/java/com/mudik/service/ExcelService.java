@@ -103,7 +103,8 @@ public class ExcelService {
 
         int startRow = 6;
         Row headerRow = sheet.createRow(startRow);
-        String[] columns = {"No", "Nama Peserta", "NIK", "Kategori", "JK", "Titik Jemput", "No HP", "Kode Booking", "Status"};
+        // FIX: tambah kolom Bus Plotting sesuai assign kendaraan
+        String[] columns = {"No", "Nama Peserta", "NIK", "Kategori", "JK", "Titik Jemput", "No HP", "Kode Booking", "Status", "Bus Plotting"};
 
         for (int i = 0; i < columns.length; i++) {
             Cell cell = headerRow.createCell(i);
@@ -140,6 +141,11 @@ public class ExcelService {
             } else {
                 cellStatus.setCellStyle(statusWaitStyle);
             }
+
+            // FIX: isi kolom Bus Plotting sesuai kendaraan yang di-assign
+            String namaArmada = (p.kendaraan != null && p.kendaraan.nama_armada != null)
+                    ? p.kendaraan.nama_armada : "Belum Plotting";
+            row.createCell(9).setCellValue(namaArmada);
         }
 
         for (int i = 0; i < columns.length; i++) {
