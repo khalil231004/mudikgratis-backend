@@ -15,7 +15,7 @@ smallrye.jwt.verify.algorithm=HS256
 app.base.url=https://dishubosrm.acehprov.go.id
 app.frontend.url=https://seulamat.dishubaceh.com
 
-# --- EMAIL CONFIG FINAL ---
+# --- EMAIL ---
 quarkus.mailer.host=smtp.gmail.com
 quarkus.mailer.port=465
 quarkus.mailer.ssl=true
@@ -25,52 +25,35 @@ quarkus.mailer.username=${MAIL_USERNAME}
 quarkus.mailer.password=${MAIL_PASSWORD}
 
 quarkus.http.host=0.0.0.0
-# Folder upload wajib absolute path di VPS
 quarkus.http.body.uploads-directory=/opt/mudik-v2/uploads
-# Batas ukuran file upload (Set ke 20MB)
 quarkus.http.limits.max-body-size=20M
-# Timeout request diperlama (biar gak putus tengah jalan pas sinyal bapuk)
 quarkus.http.read-timeout=60s
 
+# =============================================================
+# CORS ? WAJIB ADA, PAKAI BUILT-IN QUARKUS (BUKAN CUSTOM FILTER)
+# =============================================================
+# Quarkus punya CORS handler di level Vert.x (lebih dalam dari JAX-RS filter).
+# Ini yang paling reliable dan tidak bisa di-bypass oleh auth layer.
+# Custom CorsFilter.java tetap ada sebagai backup tapi yang utama ini.
+quarkus.http.cors=true
+quarkus.http.cors.origins=https://seulamat.dishubaceh.com
+quarkus.http.cors.methods=GET,POST,PUT,DELETE,OPTIONS,HEAD,PATCH
+quarkus.http.cors.headers=origin,content-type,accept,authorization,userid,x-requested-with
+quarkus.http.cors.exposed-headers=content-disposition,content-type
+quarkus.http.cors.access-control-allow-credentials=true
+quarkus.http.cors.access-control-max-age=24H
 
+# =============================================================
+# AUTH PERMISSIONS
+# =============================================================
+# proactive=false: Quarkus tidak paksa cek token di semua endpoint
 quarkus.http.auth.proactive=false
 
-# --- DAFTAR URL YANG BEBAS AKSES (PUBLIC) ---
-# Masukkan semua endpoint disini biar gak dicegat server
-# 1. Auth & Umum: Login, Register, Rute
-# 2. Pendaftaran User: Riwayat, Upload, QR Code
-# 3. Admin: Users, Pendaftar, Verifikasi, Kendaraan, Bus, Stats, Export
-quarkus.http.auth.permission.public.paths=\
-/api/auth/*,\
-/api/rute,\
-/api/rute/*,\
-/api/pendaftaran/riwayat,\
-/api/pendaftaran/uploads/*,\
-/api/pendaftaran/uuid/*,\
-/api/admin/users,\
-/api/admin/users/*,\
-/api/admin/pendaftar,\
-/api/admin/verifikasi-keluarga/*,\
-/api/admin/kendaraan,\
-/api/admin/kendaraan/*,\
-/api/admin/assign-bus,\
-/api/admin/stats,\
-/api/admin/export,
-
-# Izinkan semua path diatas (PERMIT)
+# Semua /api/* boleh diakses (validasi userId dilakukan manual di kode Java)
+quarkus.http.auth.permission.public.paths=/api/*
 quarkus.http.auth.permission.public.policy=permit
 
-# --- PREFLIGHT OPTIONS — WAJIB PUBLIC ---
-# Browser mengirim OPTIONS tanpa Authorization header sebelum PUT/POST multipart.
-# Jika tidak diizinkan, Quarkus akan reject dengan 401 dan browser
-# melaporkannya sebagai CORS error (padahal sebenarnya 401 blocked preflight).
-# CorsFilter (@PreMatching) sudah menangkap OPTIONS dan langsung return 200,
-# tapi permission ini memastikan request OPTIONS tidak diblokir di layer Quarkus dulu.
-quarkus.http.auth.permission.preflight.paths=/api/*
-quarkus.http.auth.permission.preflight.policy=permit
-quarkus.http.auth.permission.preflight.methods=OPTIONS
-
-# --- DAFTAR URL YANG WAJIB LOGIN ---
-# Tambahkan /api/user/* disini aga Satpam tau endpoint ini butuh token
-quarkus.http.auth.permission.authenticated.paths=/api/user/*,/api/secure/*
+# /api/user/* wajib token karena UserResource pakai @Authenticated
+quarkus.http.auth.permission.authenticated.paths=/api/user/*
 quarkus.http.auth.permission.authenticated.policy=authenticated
+
