@@ -48,6 +48,8 @@ public class PortalResource {
         result.put("pesan_sesi_berakhir",   cfg.pesan_sesi_berakhir);
         result.put("pesan_register_tutup",  cfg.pesan_register_tutup);
         result.put("pesan_mudik_tutup",     cfg.pesan_mudik_tutup);
+        result.put("pesan_home",            cfg.pesan_home);
+        result.put("pesan_dashboard",       cfg.pesan_dashboard);
         result.put("updated_at",            cfg.updated_at);
         result.put("updated_by",            cfg.updated_by);
 
@@ -129,13 +131,19 @@ public class PortalResource {
             if (body.containsKey("pesan_sesi_berakhir") && body.get("pesan_sesi_berakhir") != null)
                 cfg.pesan_sesi_berakhir = body.get("pesan_sesi_berakhir").toString();
 
+            if (body.containsKey("pesan_home") && body.get("pesan_home") != null)
+                cfg.pesan_home = body.get("pesan_home").toString();
+
+            if (body.containsKey("pesan_dashboard") && body.get("pesan_dashboard") != null)
+                cfg.pesan_dashboard = body.get("pesan_dashboard").toString();
+
             cfg.updated_at = LocalDateTime.now();
             cfg.updated_by = body.getOrDefault("admin", "Admin").toString();
             cfg.persist();
 
             return Response.ok(Map.of(
-                "status", "BERHASIL",
-                "pesan", "Semua konfigurasi portal berhasil diperbarui"
+                    "status", "BERHASIL",
+                    "pesan", "Semua konfigurasi portal berhasil diperbarui"
             )).build();
 
         } catch (Exception e) {
@@ -185,9 +193,9 @@ public class PortalResource {
 
             String kondisi = open ? "DIBUKA ✅" : "DITUTUP 🔒";
             return Response.ok(Map.of(
-                "status", "BERHASIL",
-                "pesan", label + " berhasil " + kondisi,
-                "open", open
+                    "status", "BERHASIL",
+                    "pesan", label + " berhasil " + kondisi,
+                    "open", open
             )).build();
 
         } catch (Exception e) {

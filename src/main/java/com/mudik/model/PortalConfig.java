@@ -51,6 +51,15 @@ public class PortalConfig extends PanacheEntityBase {
     @Column(length = 500)
     public String pesan_sesi_berakhir = "Program Mudik Gratis Aceh 2026 telah selesai. Sampai jumpa di tahun berikutnya! 🚌";
 
+    // ── PESAN INFORMASI UNTUK HOME & DASHBOARD ───────────────────────
+    /** Pesan banner yang tampil di Home.tsx (misal: pengumuman pembukaan kembali) */
+    @Column(length = 1000)
+    public String pesan_home;
+
+    /** Pesan banner yang tampil di Dashboard.tsx user saat sesi berakhir */
+    @Column(length = 1000)
+    public String pesan_dashboard = "Program Mudik Gratis Aceh 2026 telah selesai. Terima kasih telah berpartisipasi!";
+
     // ── METADATA ─────────────────────────────────────────────────────
     /** Waktu terakhir konfigurasi diubah oleh admin */
     public LocalDateTime updated_at;

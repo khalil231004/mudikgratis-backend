@@ -208,10 +208,15 @@ public class AdminResource {
         long totalDiterima = PendaftaranMudik.count("status_pendaftaran = 'DITERIMA H-3'");
         long totalSiap = PendaftaranMudik.count("status_pendaftaran = 'TERVERIFIKASI/ SIAP BERANGKAT'");
         long totalDitolak = PendaftaranMudik.count("status_pendaftaran = 'DITOLAK'");
+        long totalMenunggu = PendaftaranMudik.count("status_pendaftaran = 'MENUNGGU VERIFIKASI'");
 
         List<Rute> rutes = Rute.listAll();
+        long totalRute = rutes.size();
         long sisaKuotaGlobal = 0;
         for(Rute r : rutes) sisaKuotaGlobal += r.getSisaKuota();
+
+        // Total armada bus
+        long totalArmada = Kendaraan.count();
 
         List<Map<String, Object>> statsRute = rutes.stream().map(rute -> {
             Map<String, Object> map = new HashMap<>();
@@ -222,12 +227,26 @@ public class AdminResource {
             return map;
         }).collect(Collectors.toList());
 
+        // Statistik feedback/kepuasan
+        long totalFeedback = com.mudik.model.Feedback.count("disetujui = true");
+        Double avgRating = null;
+        try {
+            avgRating = (Double) com.mudik.model.Feedback.getEntityManager()
+                    .createQuery("SELECT AVG(f.rating) FROM Feedback f WHERE f.disetujui = true")
+                    .getSingleResult();
+        } catch (Exception ignored) {}
+
         return Response.ok(Map.of(
                 "total_masuk", totalPendaftar,
                 "total_diterima", totalDiterima,
                 "total_siap", totalSiap,
                 "total_ditolak", totalDitolak,
+                "total_menunggu", totalMenunggu,
                 "sisa_kuota_global", sisaKuotaGlobal,
+                "total_rute", totalRute,
+                "total_armada", totalArmada,
+                "total_feedback", totalFeedback,
+                "rata_rata_rating", avgRating != null ? Math.round(avgRating * 10.0) / 10.0 : 0.0,
                 "detail_rute", statsRute
         )).build();
     }
