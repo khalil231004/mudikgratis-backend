@@ -53,6 +53,14 @@ public class PendaftaranMudik extends PanacheEntityBase {
     // Fitur Blacklist
     public boolean is_blacklisted;
 
+    // ── LOCK KELUARGA ─────────────────────────────────────────────
+    // Diset true jika salah satu anggota keluarga (1 akun) ditolak.
+    // Anggota lain tidak bisa berubah status sampai masalah diselesaikan.
+    public boolean is_family_locked;
+
+    // Pesan alasan kunci yang ditampilkan ke admin di UI
+    public String alasan_lock;
+
     // Barang & Lainnya
     public String jenis_identitas;
     public String foto_identitas_path;
