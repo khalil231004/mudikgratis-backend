@@ -54,9 +54,6 @@ public class AdminResource {
             map.put("status", (p.status_pendaftaran != null) ? p.status_pendaftaran : "UNKNOWN");
             map.put("kode_booking", (p.kode_booking != null) ? p.kode_booking : "-");
             map.put("alasan_tolak", (p.alasan_tolak != null) ? p.alasan_tolak : "-");
-            map.put("is_family_locked", p.is_family_locked);
-            map.put("alasan_lock", (p.alasan_lock != null) ? p.alasan_lock : "");
-
             map.put("id_keluarga", (p.user != null) ? p.user.user_id : 0);
             map.put("nama_kepala_keluarga", (p.user != null) ? p.user.nama_lengkap : "Tanpa Akun");
             map.put("rute_tujuan", (p.rute != null) ? p.rute.tujuan : "Unknown");
@@ -126,31 +123,31 @@ public class AdminResource {
             String statusLama = p.status_pendaftaran;
             Long userId = (p.user != null) ? p.user.user_id : null;
 
-            // ── RESET: dari DITOLAK/BATAL ke MENUNGGU ──
+            // ── RESET: dari DITOLAK/BATAL/PENDING ke MENUNGGU ──
             if ("MENUNGGU VERIFIKASI".equals(statusBaru) &&
-                    ("DITOLAK".equals(statusLama) || "DIBATALKAN".equals(statusLama))) {
+                    ("DITOLAK".equals(statusLama) || "DIBATALKAN".equals(statusLama) || "PENDING".equals(statusLama))) {
 
-                if (p.rute.getSisaKuota() <= 0) {
-                    return Response.status(400).entity(Map.of("error", "Kuota Rute Penuh, tidak bisa reset data!")).build();
+                // Hanya kembalikan kuota jika sebelumnya DITOLAK/DIBATALKAN (PENDING tidak mengurangi kuota)
+                if ("DITOLAK".equals(statusLama) || "DIBATALKAN".equals(statusLama)) {
+                    if (p.rute.getSisaKuota() <= 0) {
+                        return Response.status(400).entity(Map.of("error", "Kuota Rute Penuh, tidak bisa reset data!")).build();
+                    }
+                    p.rute.kuota_terisi = (p.rute.kuota_terisi == null ? 0 : p.rute.kuota_terisi) + 1;
                 }
-                p.rute.kuota_terisi = (p.rute.kuota_terisi == null ? 0 : p.rute.kuota_terisi) + 1;
                 p.alasan_tolak = null;
-                p.is_family_locked = false;
-                p.alasan_lock = null;
 
-                // Cek apakah masih ada anggota lain yang ditolak — jika tidak, unlock semua
+                // Cek apakah setelah reset ini masih ada yang ditolak di keluarga
+                // Jika tidak → pulihkan semua PENDING ke MENUNGGU VERIFIKASI
                 if (userId != null) {
                     long masihDitolak = PendaftaranMudik.count(
                             "user.user_id = ?1 AND pendaftaran_id != ?2 AND status_pendaftaran = 'DITOLAK'",
                             userId, id
                     );
                     if (masihDitolak == 0) {
-                        // Tidak ada lagi yang ditolak → lepas semua lock di keluarga ini
                         List<PendaftaranMudik> keluarga = PendaftaranMudik.list("user.user_id = ?1", userId);
                         for (PendaftaranMudik anggota : keluarga) {
-                            if (anggota.is_family_locked) {
-                                anggota.is_family_locked = false;
-                                anggota.alasan_lock = null;
+                            if ("PENDING".equals(anggota.status_pendaftaran)) {
+                                anggota.status_pendaftaran = "MENUNGGU VERIFIKASI";
                                 anggota.persist();
                             }
                         }
@@ -158,28 +155,24 @@ public class AdminResource {
                 }
             }
 
-            // ── TOLAK INDIVIDUAL: kurangi kuota + lock anggota lain ──
+            // ── TOLAK INDIVIDUAL: kurangi kuota + set anggota lain ke PENDING ──
             else if ("DITOLAK".equals(statusBaru) &&
                     !"DITOLAK".equals(statusLama) && !"DIBATALKAN".equals(statusLama)) {
 
-                if (!"BAYI".equalsIgnoreCase(p.kategori_penumpang) && p.rute.kuota_terisi > 0) {
+                boolean wasActive = !"PENDING".equals(statusLama);
+                if (wasActive && !"BAYI".equalsIgnoreCase(p.kategori_penumpang) && p.rute.kuota_terisi > 0) {
                     p.rute.kuota_terisi -= 1;
                 }
                 p.alasan_tolak = body.getOrDefault("alasan", "Ditolak oleh admin");
-                p.is_family_locked = false; // yang ditolak tidak dikunci
-                p.alasan_lock = null;
 
-                // Lock anggota keluarga lain yang masih aktif
+                // Set anggota keluarga lain yang masih aktif ke PENDING
                 if (userId != null) {
-                    String pesanLock = "Salah satu anggota keluarga (" + p.nama_peserta + ") ditolak. " +
-                            "Status ini dikunci sampai data anggota yang ditolak diselesaikan.";
                     List<PendaftaranMudik> keluarga = PendaftaranMudik.list("user.user_id = ?1", userId);
                     for (PendaftaranMudik anggota : keluarga) {
-                        if (anggota.pendaftaran_id.equals(id)) continue; // skip yang ditolak
+                        if (anggota.pendaftaran_id.equals(id)) continue;
                         String st = anggota.status_pendaftaran;
-                        if (!"DITOLAK".equals(st) && !"DIBATALKAN".equals(st)) {
-                            anggota.is_family_locked = true;
-                            anggota.alasan_lock = pesanLock;
+                        if (!"DITOLAK".equals(st) && !"DIBATALKAN".equals(st) && !"PENDING".equals(st)) {
+                            anggota.status_pendaftaran = "PENDING";
                             anggota.persist();
                         }
                     }

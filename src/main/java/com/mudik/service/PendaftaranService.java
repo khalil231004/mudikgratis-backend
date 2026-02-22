@@ -231,13 +231,36 @@ public class PendaftaranService {
         Rute r = Rute.findById(p.rute.rute_id, LockModeType.PESSIMISTIC_WRITE);
         if (r.getSisaKuota() <= 0) throw new Exception("Kuota Rute Penuh! Tidak bisa mengajukan ulang.");
 
+        // Set status ke MENUNGGU VERIFIKASI + kembalikan kuota
         p.status_pendaftaran = "MENUNGGU VERIFIKASI";
         p.alasan_tolak = null;
-
         if (r.kuota_terisi == null) r.kuota_terisi = 0;
         r.kuota_terisi += 1;
-
         p.persist();
+
+        // ── CEK SISA KELUARGA: jika tidak ada lagi yang DITOLAK, set semua PENDING → DITERIMA H-3 ──
+        // Ini terjadi saat user sudah memperbaiki semua data yang ditolak
+        long masihDitolak = PendaftaranMudik.count(
+                "user.user_id = ?1 AND pendaftaran_id != ?2 AND status_pendaftaran = 'DITOLAK'",
+                userId, pendaftaranId
+        );
+
+        if (masihDitolak == 0) {
+            // Tidak ada yang DITOLAK → upgrade semua PENDING ke DITERIMA H-3
+            List<PendaftaranMudik> keluarga = PendaftaranMudik.list("user.user_id = ?1", userId);
+            for (PendaftaranMudik anggota : keluarga) {
+                if ("PENDING".equals(anggota.status_pendaftaran)) {
+                    anggota.status_pendaftaran = "DITERIMA H-3";
+                    anggota.persist();
+                }
+            }
+            // Juga set anggota yang baru diperbaiki ini ke DITERIMA H-3
+            // (sudah MENUNGGU VERIFIKASI, tapi karena tidak ada yang DITOLAK lagi, langsung H-3)
+            p.status_pendaftaran = "DITERIMA H-3";
+            p.persist();
+        }
+        // Jika masih ada yang DITOLAK → anggota ini tetap MENUNGGU VERIFIKASI
+        // Admin akan re-verifikasi setelah semua selesai diperbaiki
     }
 
     // =================================================================
@@ -262,7 +285,7 @@ public class PendaftaranService {
     }
 
     // =================================================================
-    // 5. ADMIN: UPDATE STATUS KELUARGA (MANUAL) — DENGAN LOCK KELUARGA
+    // 5. ADMIN: UPDATE STATUS KELUARGA (MANUAL) — DENGAN STATUS PENDING
     // =================================================================
     @Transactional
     public String updateStatusKeluarga(Long userId, String statusBaru, String alasan) throws Exception {
@@ -271,43 +294,29 @@ public class PendaftaranService {
 
         Rute ruteLocked = Rute.findById(keluarga.get(0).rute.rute_id, LockModeType.PESSIMISTIC_WRITE);
 
-        boolean adaYangDitolak = false;
-
         for (PendaftaranMudik p : keluarga) {
             String statusLama = p.status_pendaftaran;
 
-            // Skip anggota yang sudah final (ditolak/batal) kecuali saat RESET
-            if (("DITOLAK".equals(statusLama) || "DIBATALKAN".equals(statusLama))
-                    && !"MENUNGGU VERIFIKASI".equalsIgnoreCase(statusBaru)) {
-                // Hitung apakah masih ada yang ditolak setelah proses ini
-                if ("DITOLAK".equals(statusLama)) adaYangDitolak = true;
-                continue;
-            }
+            // Skip yang sudah final kecuali saat RESET
+            boolean sudahFinal = "DITOLAK".equals(statusLama) || "DIBATALKAN".equals(statusLama);
+            if (sudahFinal && !"MENUNGGU VERIFIKASI".equalsIgnoreCase(statusBaru)) continue;
 
             if ("DITOLAK".equalsIgnoreCase(statusBaru)) {
-                // Kurangi kuota untuk yang belum ditolak
-                if (!"DITOLAK".equals(statusLama) && !"DIBATALKAN".equals(statusLama)) {
+                // Kurangi kuota jika sebelumnya aktif
+                boolean wasActive = !"DITOLAK".equals(statusLama) && !"DIBATALKAN".equals(statusLama) && !"PENDING".equals(statusLama);
+                if (wasActive) {
                     if (ruteLocked.kuota_terisi != null && ruteLocked.kuota_terisi > 0)
                         ruteLocked.kuota_terisi -= 1;
                 }
                 p.alasan_tolak = (alasan != null && !alasan.isBlank()) ? alasan : "Ditolak oleh admin";
-                p.is_family_locked = false; // yang ditolak tidak dikunci, hanya yang lain
-                p.alasan_lock = null;
-                adaYangDitolak = true;
             } else if ("MENUNGGU VERIFIKASI".equals(statusBaru)) {
-                // RESET: balikan kuota jika dari status ditolak/batal
-                if (("DITOLAK".equals(statusLama) || "DIBATALKAN".equals(statusLama))) {
+                // RESET: pulihkan kuota dari DITOLAK/DIBATALKAN/PENDING
+                if (sudahFinal || "PENDING".equals(statusLama)) {
                     if (ruteLocked.getSisaKuota() <= 0) throw new Exception("Kuota sudah penuh!");
                     if (ruteLocked.kuota_terisi == null) ruteLocked.kuota_terisi = 0;
-                    ruteLocked.kuota_terisi += 1;
+                    if (sudahFinal) ruteLocked.kuota_terisi += 1; // PENDING tidak kurangi kuota, jadi tidak perlu tambah
                 }
                 p.alasan_tolak = null;
-                p.is_family_locked = false;
-                p.alasan_lock = null;
-            } else {
-                // DITERIMA H-3, SIAP BERANGKAT, dll — bersihkan lock
-                p.is_family_locked = false;
-                p.alasan_lock = null;
             }
 
             p.status_pendaftaran = statusBaru;
@@ -315,24 +324,6 @@ public class PendaftaranService {
         }
 
         ruteLocked.persist();
-
-        // Jika DITOLAK SEKELUARGA → lock anggota yang tidak ditolak (edge case: seharusnya semua ditolak)
-        // Jika RESET → lepas semua lock
-        if ("MENUNGGU VERIFIKASI".equals(statusBaru)) {
-            // Cek apakah masih ada yang ditolak setelah reset ini
-            long masihDitolak = keluarga.stream()
-                    .filter(p -> "DITOLAK".equals(p.status_pendaftaran)).count();
-            if (masihDitolak == 0) {
-                // Semua bersih → unlock semua
-                for (PendaftaranMudik p : keluarga) {
-                    if (p.is_family_locked) {
-                        p.is_family_locked = false;
-                        p.alasan_lock = null;
-                        p.persist();
-                    }
-                }
-            }
-        }
 
         String tipeWa = "TERIMA";
         if ("DITOLAK".equalsIgnoreCase(statusBaru)) tipeWa = "TOLAK_DATA";
@@ -351,7 +342,7 @@ public class PendaftaranService {
     }
 
     // =================================================================
-    // 7. ADMIN: VERIFIKASI CUSTOM (CHECKBOX) - DENGAN LOCK KELUARGA
+    // 7. ADMIN: VERIFIKASI CUSTOM (CHECKBOX) - STATUS PENDING EKSPLISIT
     // =================================================================
     @Transactional
     public String verifikasiCustom(Long userId, List<Long> idsDitolak, String alasan) throws Exception {
@@ -362,59 +353,58 @@ public class PendaftaranService {
 
         int countDitolak = 0;
 
+        // ── PASS 1: proses yang dicentang (DITOLAK) ──
         for (PendaftaranMudik p : keluarga) {
             String statusLama = p.status_pendaftaran;
             boolean isRejected = idsDitolak.contains(p.pendaftaran_id);
 
-            // A. DITOLAK — kurangi kuota, set alasan
             if (isRejected) {
-                if (!"DITOLAK".equals(statusLama) && !"DIBATALKAN".equals(statusLama)) {
-                    if (!"BAYI".equalsIgnoreCase(p.kategori_penumpang)) {
-                        if (ruteLocked.kuota_terisi != null && ruteLocked.kuota_terisi > 0)
-                            ruteLocked.kuota_terisi -= 1;
-                    }
+                // Kurangi kuota hanya jika sebelumnya status aktif (bukan sudah ditolak/batal/ditunda)
+                boolean wasActive = !"DITOLAK".equals(statusLama)
+                        && !"DIBATALKAN".equals(statusLama)
+                        && !"PENDING".equals(statusLama);
+                if (wasActive && !"BAYI".equalsIgnoreCase(p.kategori_penumpang)) {
+                    if (ruteLocked.kuota_terisi != null && ruteLocked.kuota_terisi > 0)
+                        ruteLocked.kuota_terisi -= 1;
                 }
                 p.status_pendaftaran = "DITOLAK";
                 p.alasan_tolak = alasan;
-                p.is_family_locked = false; // yang ditolak tidak perlu dikunci
-                p.alasan_lock = null;
+                p.persist();
                 countDitolak++;
-            }
-            // B. DITERIMA — ACC ke H-3
-            else {
-                if ("DITOLAK".equals(statusLama) || "DIBATALKAN".equals(statusLama)) {
-                    if (ruteLocked.getSisaKuota() <= 0) throw new Exception("Gagal ACC. Kuota Penuh!");
-                    if (ruteLocked.kuota_terisi == null) ruteLocked.kuota_terisi = 0;
-                    ruteLocked.kuota_terisi += 1;
-                }
-                p.status_pendaftaran = "DITERIMA H-3";
+            } else if ("DITOLAK".equals(statusLama) || "DIBATALKAN".equals(statusLama)) {
+                // Sebelumnya ditolak/batal tapi sekarang tidak dicentang (di-uncheck) → kembalikan kuota
+                if (ruteLocked.getSisaKuota() <= 0) throw new Exception("Gagal ACC. Kuota Penuh!");
+                if (ruteLocked.kuota_terisi == null) ruteLocked.kuota_terisi = 0;
+                ruteLocked.kuota_terisi += 1;
+                p.status_pendaftaran = "MENUNGGU VERIFIKASI";
                 p.alasan_tolak = null;
-                // Lock dibersihkan saat di-ACC
-                p.is_family_locked = false;
-                p.alasan_lock = null;
+                p.persist();
             }
-            p.persist();
         }
 
-        // Jika ada yang ditolak → lock anggota lain yang masih aktif (bukan yang sudah ditolak/batal)
+        ruteLocked.persist();
+
+        // ── PASS 2: tentukan status anggota yang tidak dicentang ──
         if (countDitolak > 0) {
-            String pesanLock = "Satu atau lebih anggota keluarga ditolak. Selesaikan dulu sebelum dilanjutkan.";
+            // Ada yang ditolak → anggota lain yang masih aktif → status PENDING
             for (PendaftaranMudik p : keluarga) {
                 boolean isRejected = idsDitolak.contains(p.pendaftaran_id);
                 String status = p.status_pendaftaran;
                 boolean sudahFinal = "DITOLAK".equals(status) || "DIBATALKAN".equals(status);
                 if (!isRejected && !sudahFinal) {
-                    p.is_family_locked = true;
-                    p.alasan_lock = pesanLock;
+                    p.status_pendaftaran = "PENDING";
+                    p.alasan_tolak = null;
                     p.persist();
                 }
             }
         } else {
-            // Semua diterima → lepas semua lock
+            // Tidak ada yang ditolak → SEMUA valid → set DITERIMA H-3
+            // Juga pulihkan anggota yang sebelumnya PENDING
             for (PendaftaranMudik p : keluarga) {
-                if (p.is_family_locked) {
-                    p.is_family_locked = false;
-                    p.alasan_lock = null;
+                String status = p.status_pendaftaran;
+                if (!"DITOLAK".equals(status) && !"DIBATALKAN".equals(status)) {
+                    p.status_pendaftaran = "DITERIMA H-3";
+                    p.alasan_tolak = null;
                     p.persist();
                 }
             }
