@@ -56,9 +56,12 @@ public class PendaftaranMudik extends PanacheEntityBase {
     // ── LOCK KELUARGA ─────────────────────────────────────────────
     // Diset true jika salah satu anggota keluarga (1 akun) ditolak.
     // Anggota lain tidak bisa berubah status sampai masalah diselesaikan.
-    public boolean is_family_locked;
+    // columnDefinition eksplisit agar Hibernate auto-DDL tidak gagal di PostgreSQL
+    @Column(name = "is_family_locked", nullable = false, columnDefinition = "boolean DEFAULT false")
+    public boolean is_family_locked = false;
 
     // Pesan alasan kunci yang ditampilkan ke admin di UI
+    @Column(name = "alasan_lock", length = 500)
     public String alasan_lock;
 
     // Barang & Lainnya

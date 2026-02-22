@@ -13,10 +13,13 @@ import java.io.IOException;
  * CorsFilter — backup filter untuk memastikan CORS header selalu ada.
  *
  * CATATAN: CORS utama ditangani oleh Quarkus built-in di application.properties
- * (quarkus.http.cors=true). Filter ini hanya backup untuk edge case.
+ * (quarkus.http.cors=true). Filter ini sebagai backup untuk edge case dan error responses.
  *
  * @PreMatching memastikan OPTIONS preflight ditangkap SEBELUM auth check,
  * sehingga browser tidak kena 401 saat kirim preflight tanpa Authorization header.
+ *
+ * PENTING: Filter ini juga menangkap error response (4xx/5xx) yang mungkin tidak
+ * mendapat CORS header dari Quarkus built-in jika terjadi error sebelum routing selesai.
  */
 @Provider
 @PreMatching
@@ -42,9 +45,11 @@ public class CorsFilter implements ContainerRequestFilter, ContainerResponseFilt
         }
     }
 
-    // Tambahkan CORS headers ke semua response
+    // Tambahkan CORS headers ke SEMUA response (termasuk 4xx/5xx)
+    // putSingle dipakai agar tidak duplikasi header jika Quarkus built-in sudah menambahkannya
     @Override
     public void filter(ContainerRequestContext req, ContainerResponseContext res) throws IOException {
+        // Selalu override untuk memastikan header ada, termasuk saat error
         res.getHeaders().putSingle("Access-Control-Allow-Origin",      ORIGIN);
         res.getHeaders().putSingle("Access-Control-Allow-Headers",     ALLOW_HDR);
         res.getHeaders().putSingle("Access-Control-Allow-Methods",     ALLOW_MTD);
