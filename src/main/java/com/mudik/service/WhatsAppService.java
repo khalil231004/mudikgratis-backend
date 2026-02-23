@@ -36,7 +36,7 @@ public class WhatsAppService {
         String pesan = "";
         String linkAction = "";
         // FIX 9: Tambahkan Hotline nomor
-        String hotline = "📞 *Hotline Mudik Gratis Dishub Aceh:*\n0811-6800-XXX (WhatsApp)";
+        String hotline = "📞 *Hubungi Admin:*\nNana (Verifikasi): 0821-7653-095\nMega (Info Umum): 0821-7653-093";
         String footer = "\n\n" + hotline + "\n\n_Pesan otomatis Sistem Mudik Gratis Dishub Aceh_";
 
         try {
@@ -83,6 +83,42 @@ public class WhatsAppService {
         }
     }
 
+    // ── NOTIFIKASI KE ADMIN (saat user daftar baru / perbaiki data) ──
+    // Admin Nana (status/penolakan): 08217653095
+    // Admin Mega (info umum): 08217653093
+    public String generateAdminLink(String tipe, String namaPeserta, String noHpUser, int jumlahPeserta) {
+        // Notifikasi ke Admin Nana (verifikasi & penolakan)
+        String adminNana = "628217653095";
+        String baseUrl = frontendUrlOpt.orElse("https://dishubosrm.acehprov.go.id");
+        String pesan = "";
+
+        try {
+            switch (tipe) {
+                case "PENDAFTAR_BARU":
+                    pesan = "🔔 *Notifikasi Pendaftar Baru*\n\n" +
+                            "Nama: *" + namaPeserta + "*\n" +
+                            "Jumlah peserta: *" + jumlahPeserta + " orang*\n" +
+                            "No HP user: " + (noHpUser != null && !noHpUser.isBlank() ? noHpUser : "-") + "\n\n" +
+                            "Silakan verifikasi di dashboard admin:\n" + baseUrl + "/admin";
+                    break;
+                case "DATA_DIPERBAIKI":
+                    pesan = "🔄 *Data Diperbaiki - Perlu Re-Verifikasi*\n\n" +
+                            "Peserta *" + namaPeserta + "* telah memperbaiki data yang ditolak.\n" +
+                            "No HP user: " + (noHpUser != null && !noHpUser.isBlank() ? noHpUser : "-") + "\n\n" +
+                            "Silakan verifikasi ulang di dashboard admin:\n" + baseUrl + "/admin";
+                    break;
+                default:
+                    pesan = "🔔 Ada aktivitas baru dari peserta *" + namaPeserta + "*. Cek dashboard admin: " + baseUrl + "/admin";
+            }
+
+            String encodedPesan = java.net.URLEncoder.encode(pesan, java.nio.charset.StandardCharsets.UTF_8.toString());
+            return "https://wa.me/" + adminNana + "?text=" + encodedPesan;
+        } catch (Exception e) {
+            System.err.println("ERROR generateAdminLink: " + e.getMessage());
+            return "#";
+        }
+    }
+
     // FIX 10: Notifikasi kuota penuh ke penumpang
     public String generateKuotaPenuhLink(String noHp, String namaPeserta, String namaRute) {
         if (noHp == null || noHp.length() < 7) return "#";
@@ -90,7 +126,7 @@ public class WhatsAppService {
         if (hpFormat.startsWith("0")) hpFormat = "62" + hpFormat.substring(1);
 
         String baseUrl = frontendUrlOpt.orElse("https://dishubosrm.acehprov.go.id");
-        String hotline = "📞 *Hotline:* 0811-6800-XXX";
+        String hotline = "📞 *Admin:* 0821-7653-095 / 0821-7653-093";
         try {
             String pesan = "👋 *Salam Seulamat dari Dishub Aceh*\n\n" +
                     "Yth. Sdr/i *" + namaPeserta + "*,\n" +

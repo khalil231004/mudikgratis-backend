@@ -21,7 +21,7 @@ import java.nio.file.StandardCopyOption;
 import java.util.Map;
 import java.util.UUID;
 
-import static org.eclipse.microprofile.jwt.Claims.email;
+// removed static email import - was causing silent bug
 
 @Path("/api/user")
 @Produces(MediaType.APPLICATION_JSON)
@@ -47,17 +47,38 @@ public class UserResource {
     @GET
     @Path("/profile")
     public Response getMyProfile() {
-        User user = User.find("email", email).firstResult();
-        if (user == null) return Response.status(404).build();
+        // FIX: gunakan userId dari header seperti endpoint lain, bukan email (yg ada bug static import)
+        try {
+            String userIdStr = identity.getAttribute("user_id") != null
+                    ? identity.getAttribute("user_id").toString()
+                    : identity.getPrincipal().getName();
+            // Try by userId first, fall back to email
+            User user = null;
+            try {
+                Long uid = Long.parseLong(userIdStr);
+                user = User.findById(uid);
+            } catch (NumberFormatException e) {
+                // principal is email
+                user = User.find("email", userIdStr).firstResult();
+            }
+            if (user == null) {
+                // last resort: try email from JWT subject
+                String email = identity.getPrincipal().getName();
+                user = User.find("email", email).firstResult();
+            }
+            if (user == null) return Response.status(404).entity(Map.of("error","User tidak ditemukan")).build();
 
-        return Response.ok(Map.of(
-                "nama", user.nama_lengkap,
-                "email", user.email,
-                "nik", user.nik,
-                "no_hp", user.no_hp,
-                "foto_profil", user.foto_profil != null ? user.foto_profil : "", // Return URL foto
-                "role", user.role
-        )).build();
+            return Response.ok(Map.of(
+                    "nama", user.nama_lengkap != null ? user.nama_lengkap : "",
+                    "email", user.email != null ? user.email : "",
+                    "nik", user.nik != null ? user.nik : "",
+                    "no_hp", user.no_hp != null ? user.no_hp : "",
+                    "foto_profil", user.foto_profil != null ? user.foto_profil : "",
+                    "role", user.role != null ? user.role : ""
+            )).build();
+        } catch (Exception e) {
+            return Response.status(500).entity(Map.of("error", e.getMessage())).build();
+        }
     }
 
     // 2. GANTI PASSWORD (DENGAN CEK PASSWORD LAMA)
@@ -90,9 +111,15 @@ public class UserResource {
     @Consumes(MediaType.MULTIPART_FORM_DATA) // 🔥 Wajib Multipart
     @Transactional
     public Response updateProfile(ProfileForm form) {
-        String email = identity.getPrincipal().getName();
-        User user = User.find("email", email).firstResult();
-        if (user == null) return Response.status(404).build();
+        String emailOrId = identity.getPrincipal().getName();
+        User user = null;
+        try {
+            Long uid = Long.parseLong(emailOrId);
+            user = User.findById(uid);
+        } catch (NumberFormatException e) {
+            user = User.find("email", emailOrId).firstResult();
+        }
+        if (user == null) return Response.status(404).entity(Map.of("error","User tidak ditemukan")).build();
 
         // Update Text Data
         if (form.nama_lengkap != null && !form.nama_lengkap.isBlank()) user.nama_lengkap = form.nama_lengkap;

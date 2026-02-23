@@ -35,7 +35,7 @@ public class PendaftaranService {
     // 1. PROSES PENDAFTARAN WEB
     // =================================================================
     @Transactional
-    public void prosesPendaftaranWeb(User user, Rute rute, PendaftaranMultipartForm form) throws Exception {
+    public String prosesPendaftaranWeb(User user, Rute rute, PendaftaranMultipartForm form) throws Exception {
         int jumlahPeserta = form.nama_peserta.size();
 
         // Cek Kuota Awal (Tanpa Lock)
@@ -160,6 +160,14 @@ public class PendaftaranService {
         ruteLocked.kuota_terisi += jumlahPeserta;
 
         ruteLocked.persist();
+
+        // Kirim notifikasi WA ke admin bahwa ada pendaftar baru
+        return whatsAppService.generateAdminLink(
+                "PENDAFTAR_BARU",
+                listToSave.get(0).nama_peserta,
+                user.no_hp,
+                jumlahPeserta
+        );
     }
 
     // =================================================================
@@ -196,7 +204,7 @@ public class PendaftaranService {
     // 3. EDIT PENDAFTARAN
     // =================================================================
     @Transactional
-    public void editPendaftaran(Long userId, Long pendaftaranId, PendaftaranMultipartForm form) throws Exception {
+    public String editPendaftaran(Long userId, Long pendaftaranId, PendaftaranMultipartForm form) throws Exception {
         PendaftaranMudik p = PendaftaranMudik.findById(pendaftaranId);
         if (p == null || !p.user.user_id.equals(userId)) throw new Exception("Data tidak valid.");
 
@@ -231,8 +239,8 @@ public class PendaftaranService {
         Rute r = Rute.findById(p.rute.rute_id, LockModeType.PESSIMISTIC_WRITE);
         if (r.getSisaKuota() <= 0) throw new Exception("Kuota Rute Penuh! Tidak bisa mengajukan ulang.");
 
-        // ── Set status ke MENUNGGU VERIFIKASI + kembalikan kuota ──
-        // User sudah perbaiki data → tunggu admin re-verifikasi, BUKAN auto DITERIMA H-3
+        // Set status ke MENUNGGU VERIFIKASI + kembalikan kuota
+        // User sudah perbaiki data → admin harus re-verifikasi, BUKAN auto H-3
         p.status_pendaftaran = "MENUNGGU VERIFIKASI";
         p.alasan_tolak = null;
         if (r.kuota_terisi == null) r.kuota_terisi = 0;
@@ -259,6 +267,16 @@ public class PendaftaranService {
             }
         }
         // Jika masih ada yang DITOLAK → yang lain tetap PENDING, yang ini MENUNGGU VERIFIKASI
+
+        // Kirim notifikasi WA ke admin bahwa user sudah perbaiki data
+        String noHpUser = p.no_hp_peserta != null ? p.no_hp_peserta :
+                (p.user != null && p.user.no_hp != null ? p.user.no_hp : "");
+        return whatsAppService.generateAdminLink(
+                "DATA_DIPERBAIKI",
+                p.nama_peserta,
+                noHpUser,
+                0
+        );
     }
 
     // =================================================================
