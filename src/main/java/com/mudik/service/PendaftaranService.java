@@ -231,36 +231,34 @@ public class PendaftaranService {
         Rute r = Rute.findById(p.rute.rute_id, LockModeType.PESSIMISTIC_WRITE);
         if (r.getSisaKuota() <= 0) throw new Exception("Kuota Rute Penuh! Tidak bisa mengajukan ulang.");
 
-        // Set status ke MENUNGGU VERIFIKASI + kembalikan kuota
+        // ── Set status ke MENUNGGU VERIFIKASI + kembalikan kuota ──
+        // User sudah perbaiki data → tunggu admin re-verifikasi, BUKAN auto DITERIMA H-3
         p.status_pendaftaran = "MENUNGGU VERIFIKASI";
         p.alasan_tolak = null;
         if (r.kuota_terisi == null) r.kuota_terisi = 0;
         r.kuota_terisi += 1;
+        r.persist();
         p.persist();
 
-        // ── CEK SISA KELUARGA: jika tidak ada lagi yang DITOLAK, set semua PENDING → DITERIMA H-3 ──
-        // Ini terjadi saat user sudah memperbaiki semua data yang ditolak
+        // ── CEK SISA KELUARGA: jika semua DITOLAK sudah diperbaiki,
+        //    kembalikan PENDING → MENUNGGU VERIFIKASI agar admin bisa verif ulang sekaligus ──
         long masihDitolak = PendaftaranMudik.count(
                 "user.user_id = ?1 AND pendaftaran_id != ?2 AND status_pendaftaran = 'DITOLAK'",
                 userId, pendaftaranId
         );
 
         if (masihDitolak == 0) {
-            // Tidak ada yang DITOLAK → upgrade semua PENDING ke DITERIMA H-3
+            // Tidak ada yang DITOLAK lagi → PENDING kembali ke MENUNGGU VERIFIKASI
+            // Admin harus approve ulang untuk memberikan status DITERIMA H-3
             List<PendaftaranMudik> keluarga = PendaftaranMudik.list("user.user_id = ?1", userId);
             for (PendaftaranMudik anggota : keluarga) {
                 if ("PENDING".equals(anggota.status_pendaftaran)) {
-                    anggota.status_pendaftaran = "DITERIMA H-3";
+                    anggota.status_pendaftaran = "MENUNGGU VERIFIKASI";
                     anggota.persist();
                 }
             }
-            // Juga set anggota yang baru diperbaiki ini ke DITERIMA H-3
-            // (sudah MENUNGGU VERIFIKASI, tapi karena tidak ada yang DITOLAK lagi, langsung H-3)
-            p.status_pendaftaran = "DITERIMA H-3";
-            p.persist();
         }
-        // Jika masih ada yang DITOLAK → anggota ini tetap MENUNGGU VERIFIKASI
-        // Admin akan re-verifikasi setelah semua selesai diperbaiki
+        // Jika masih ada yang DITOLAK → yang lain tetap PENDING, yang ini MENUNGGU VERIFIKASI
     }
 
     // =================================================================

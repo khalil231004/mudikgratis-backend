@@ -21,6 +21,8 @@ import java.nio.file.StandardCopyOption;
 import java.util.Map;
 import java.util.UUID;
 
+import static org.eclipse.microprofile.jwt.Claims.email;
+
 @Path("/api/user")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
@@ -45,7 +47,6 @@ public class UserResource {
     @GET
     @Path("/profile")
     public Response getMyProfile() {
-        String email = identity.getPrincipal().getName();
         User user = User.find("email", email).firstResult();
         if (user == null) return Response.status(404).build();
 
