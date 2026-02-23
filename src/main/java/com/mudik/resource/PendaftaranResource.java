@@ -83,13 +83,6 @@ public class PendaftaranResource {
                 map.put("nama_peserta", p.nama_peserta);
                 map.put("nik_peserta", p.nik_peserta);
                 map.put("alasan_tolak", p.alasan_tolak != null ? p.alasan_tolak : "-");
-                // FIX: tambahkan field yang dibutuhkan halaman edit
-                map.put("tanggal_lahir", p.tanggal_lahir != null ? p.tanggal_lahir.toString() : "");
-                map.put("kategori_penumpang", p.kategori_penumpang != null ? p.kategori_penumpang : "DEWASA");
-                map.put("jenis_kelamin", p.jenis_kelamin != null ? p.jenis_kelamin : "");
-                map.put("alamat_rumah", p.alamat_rumah != null ? p.alamat_rumah : "");
-                map.put("no_hp_peserta", p.no_hp_peserta != null ? p.no_hp_peserta : "");
-                map.put("foto_bukti", p.foto_identitas_path != null ? p.foto_identitas_path : "");
 
                 if (p.rute != null) {
                     map.put("tujuan", p.rute.tujuan);
@@ -120,13 +113,9 @@ public class PendaftaranResource {
             Rute rute = Rute.findById(ruteId);
             if (user == null || rute == null) return Response.status(404).entity(Map.of("error", "Data tidak valid")).build();
 
-            String linkWaAdmin = pendaftaranService.prosesPendaftaranWeb(user, rute, form);
+            pendaftaranService.prosesPendaftaranWeb(user, rute, form);
 
-            return Response.ok(Map.of(
-                    "status", "BERHASIL",
-                    "pesan", form.nama_peserta.size() + " peserta terdaftar!",
-                    "link_wa_admin", linkWaAdmin != null ? linkWaAdmin : ""
-            )).build();
+            return Response.ok(Map.of("status", "BERHASIL", "pesan", form.nama_peserta.size() + " peserta terdaftar!")).build();
         } catch (Exception e) {
             return Response.status(400).entity(Map.of("error", e.getMessage())).build();
         }
@@ -163,12 +152,11 @@ public class PendaftaranResource {
         try {
             Long userId = resolveUserId(userIdStr); // 🔥 Auto-convert
 
-            String linkWaAdmin = pendaftaranService.editPendaftaran(userId, pendaftaranId, form);
+            pendaftaranService.editPendaftaran(userId, pendaftaranId, form);
 
             return Response.ok(Map.of(
                     "status", "BERHASIL",
-                    "pesan", "Data berhasil diperbaiki. Menunggu Verifikasi.",
-                    "link_wa_admin", linkWaAdmin != null ? linkWaAdmin : ""
+                    "pesan", "Data berhasil diperbaiki. Menunggu Verifikasi."
             )).build();
         } catch (Exception e) {
             return Response.status(400).entity(Map.of("error", e.getMessage())).build();
