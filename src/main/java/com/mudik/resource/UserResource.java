@@ -47,37 +47,47 @@ public class UserResource {
     @GET
     @Path("/profile")
     public Response getMyProfile() {
-        // FIX: gunakan userId dari header seperti endpoint lain, bukan email (yg ada bug static import)
         try {
-            String userIdStr = identity.getAttribute("user_id") != null
-                    ? identity.getAttribute("user_id").toString()
-                    : identity.getPrincipal().getName();
-            // Try by userId first, fall back to email
             User user = null;
-            try {
-                Long uid = Long.parseLong(userIdStr);
-                user = User.findById(uid);
-            } catch (NumberFormatException e) {
-                // principal is email
-                user = User.find("email", userIdStr).firstResult();
+
+            // FIX: JWT menyimpan userId di claim "id_user", bukan "user_id"
+            Object idUserAttr = identity.getAttribute("id_user");
+            if (idUserAttr != null) {
+                try {
+                    Long uid = Long.parseLong(idUserAttr.toString());
+                    user = User.findById(uid);
+                } catch (NumberFormatException ignored) {}
             }
+
+            // Fallback: coba "user_id" (nama lama)
             if (user == null) {
-                // last resort: try email from JWT subject
-                String email = identity.getPrincipal().getName();
-                user = User.find("email", email).firstResult();
+                Object userIdAttr = identity.getAttribute("user_id");
+                if (userIdAttr != null) {
+                    try {
+                        Long uid = Long.parseLong(userIdAttr.toString());
+                        user = User.findById(uid);
+                    } catch (NumberFormatException ignored) {}
+                }
             }
+
+            // Fallback: cari via email dari "upn" (principal name di Quarkus JWT)
+            if (user == null) {
+                String email = identity.getPrincipal().getName();
+                if (email != null && email.contains("@")) {
+                    user = User.find("email", email).firstResult();
+                }
+            }
+
             if (user == null) return Response.status(404).entity(Map.of("error","User tidak ditemukan")).build();
 
-            // FIX: Sertakan jenis_kelamin agar "Isi Data Akun Saya" bisa auto-fill gender
-            Map<String, Object> profileData = new java.util.HashMap<>();
-            profileData.put("nama",          user.nama_lengkap != null ? user.nama_lengkap : "");
-            profileData.put("email",         user.email        != null ? user.email        : "");
-            profileData.put("nik",           user.nik          != null ? user.nik          : "");
-            profileData.put("no_hp",         user.no_hp        != null ? user.no_hp        : "");
-            profileData.put("jenis_kelamin", user.jenis_kelamin!= null ? user.jenis_kelamin: "");
-            profileData.put("foto_profil",   user.foto_profil  != null ? user.foto_profil  : "");
-            profileData.put("role",          user.role         != null ? user.role         : "");
-            return Response.ok(profileData).build();
+            return Response.ok(Map.of(
+                    "nama", user.nama_lengkap != null ? user.nama_lengkap : "",
+                    "email", user.email != null ? user.email : "",
+                    "nik", user.nik != null ? user.nik : "",
+                    "no_hp", user.no_hp != null ? user.no_hp : "",
+                    "foto_profil", user.foto_profil != null ? user.foto_profil : "",
+                    "role", user.role != null ? user.role : ""
+            )).build();
         } catch (Exception e) {
             return Response.status(500).entity(Map.of("error", e.getMessage())).build();
         }
