@@ -68,14 +68,16 @@ public class UserResource {
             }
             if (user == null) return Response.status(404).entity(Map.of("error","User tidak ditemukan")).build();
 
-            return Response.ok(Map.of(
-                    "nama", user.nama_lengkap != null ? user.nama_lengkap : "",
-                    "email", user.email != null ? user.email : "",
-                    "nik", user.nik != null ? user.nik : "",
-                    "no_hp", user.no_hp != null ? user.no_hp : "",
-                    "foto_profil", user.foto_profil != null ? user.foto_profil : "",
-                    "role", user.role != null ? user.role : ""
-            )).build();
+            // FIX: Sertakan jenis_kelamin agar "Isi Data Akun Saya" bisa auto-fill gender
+            Map<String, Object> profileData = new java.util.HashMap<>();
+            profileData.put("nama",          user.nama_lengkap != null ? user.nama_lengkap : "");
+            profileData.put("email",         user.email        != null ? user.email        : "");
+            profileData.put("nik",           user.nik          != null ? user.nik          : "");
+            profileData.put("no_hp",         user.no_hp        != null ? user.no_hp        : "");
+            profileData.put("jenis_kelamin", user.jenis_kelamin!= null ? user.jenis_kelamin: "");
+            profileData.put("foto_profil",   user.foto_profil  != null ? user.foto_profil  : "");
+            profileData.put("role",          user.role         != null ? user.role         : "");
+            return Response.ok(profileData).build();
         } catch (Exception e) {
             return Response.status(500).entity(Map.of("error", e.getMessage())).build();
         }

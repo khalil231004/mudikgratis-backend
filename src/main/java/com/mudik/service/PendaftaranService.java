@@ -108,11 +108,11 @@ public class PendaftaranService {
                     LocalDate tgl = LocalDate.parse(form.tanggal_lahir.get(i));
                     p.tanggal_lahir = tgl;
                     int umur = Period.between(tgl, LocalDate.now()).getYears();
-                    // FIX 1: Anak = umur < 17, Bayi = umur < 2
+                    // FIX: Gunakan "ANAK-ANAK" konsisten dengan frontend (bukan "ANAK")
                     if (umur < 2) {
                         p.kategori_penumpang = "BAYI";
                     } else if (umur < 17) {
-                        p.kategori_penumpang = "ANAK";
+                        p.kategori_penumpang = "ANAK-ANAK";
                     } else {
                         p.kategori_penumpang = "DEWASA";
                     }
@@ -202,10 +202,21 @@ public class PendaftaranService {
 
         if (!"DITOLAK".equals(p.status_pendaftaran)) throw new Exception("Hanya status DITOLAK yang bisa diperbaiki.");
 
-        if (form.nama_peserta != null) p.nama_peserta = form.nama_peserta.get(0).toUpperCase();
-        if (form.nik_peserta != null) p.nik_peserta = form.nik_peserta.get(0);
+        // FIX: Update semua field yang dikirim (bukan hanya nama & NIK)
+        if (form.nama_peserta != null && !form.nama_peserta.isEmpty())
+            p.nama_peserta = form.nama_peserta.get(0).toUpperCase();
+        if (form.nik_peserta != null && !form.nik_peserta.isEmpty())
+            p.nik_peserta = form.nik_peserta.get(0).trim();
+        if (form.jenis_kelamin != null && !form.jenis_kelamin.isEmpty() && !form.jenis_kelamin.get(0).isBlank())
+            p.jenis_kelamin = form.jenis_kelamin.get(0);
+        if (form.alamat_rumah != null && !form.alamat_rumah.isEmpty() && !form.alamat_rumah.get(0).isBlank())
+            p.alamat_rumah = form.alamat_rumah.get(0);
+        if (form.no_hp_peserta != null && !form.no_hp_peserta.isEmpty() && !form.no_hp_peserta.get(0).isBlank())
+            p.no_hp_peserta = form.no_hp_peserta.get(0);
+        if (form.jenis_identitas != null && !form.jenis_identitas.isEmpty() && !form.jenis_identitas.get(0).isBlank())
+            p.jenis_identitas = form.jenis_identitas.get(0);
 
-        // FIX 1: Update tanggal_lahir dan recalculate kategori penumpang saat edit
+        // FIX: Update tanggal_lahir dan recalculate kategori (gunakan "ANAK-ANAK" konsisten dengan frontend)
         if (form.tanggal_lahir != null && !form.tanggal_lahir.isEmpty() && !form.tanggal_lahir.get(0).isBlank()) {
             try {
                 LocalDate tgl = LocalDate.parse(form.tanggal_lahir.get(0));
@@ -214,7 +225,7 @@ public class PendaftaranService {
                 if (umur < 2) {
                     p.kategori_penumpang = "BAYI";
                 } else if (umur < 17) {
-                    p.kategori_penumpang = "ANAK";
+                    p.kategori_penumpang = "ANAK-ANAK";  // FIX: konsisten dengan frontend
                 } else {
                     p.kategori_penumpang = "DEWASA";
                 }

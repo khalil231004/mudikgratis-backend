@@ -84,10 +84,32 @@ public class PendaftaranResource {
                 map.put("nik_peserta", p.nik_peserta);
                 map.put("alasan_tolak", p.alasan_tolak != null ? p.alasan_tolak : "-");
 
+                // ── FIX: Sertakan SEMUA field yang dibutuhkan saat mode Edit ──
+                map.put("jenis_kelamin",       p.jenis_kelamin != null ? p.jenis_kelamin : "");
+                map.put("tanggal_lahir",        p.tanggal_lahir);        // LocalDate -> [y,m,d] JSON
+                // Normalize kategori ke format frontend ("ANAK-ANAK" bukan "ANAK")
+                String kategori = p.kategori_penumpang != null ? p.kategori_penumpang : "DEWASA";
+                if ("ANAK".equalsIgnoreCase(kategori)) kategori = "ANAK-ANAK";
+                map.put("kategori_penumpang",   kategori);
+                map.put("alamat_rumah",         p.alamat_rumah != null ? p.alamat_rumah : "");
+                map.put("no_hp_peserta",        p.no_hp_peserta != null ? p.no_hp_peserta : "");
+                map.put("jenis_identitas",      p.jenis_identitas != null ? p.jenis_identitas : "KTP");
+                // Path foto relatif — frontend sambungkan dengan BASE_URL
+                map.put("foto_bukti",           p.foto_identitas_path != null ? "/" + p.foto_identitas_path : null);
+
                 if (p.rute != null) {
+                    Map<String, Object> ruteMap = new HashMap<>();
+                    ruteMap.put("rute_id", p.rute.rute_id);
+                    ruteMap.put("tujuan",  p.rute.tujuan);
+                    ruteMap.put("asal",    p.rute.asal != null ? p.rute.asal : "Banda Aceh");
+                    map.put("rute", ruteMap);
                     map.put("tujuan", p.rute.tujuan);
                     map.put("tanggal_keberangkatan", p.rute.getFormattedDate());
-                } else { map.put("tujuan", "-"); }
+                    map.put("rute_id", p.rute.rute_id);
+                } else {
+                    map.put("tujuan", "-");
+                    map.put("rute", null);
+                }
 
                 map.put("nama_bus", (p.kendaraan != null) ? p.kendaraan.nama_armada : "Menunggu Plotting");
                 result.add(map);
