@@ -33,7 +33,7 @@ public class KendaraanResource {
             map.put("rute_id", k.rute.rute_id);
             map.put("rute_asal", k.rute.asal);
             map.put("rute_tujuan", k.rute.tujuan);
-            map.put("waktu_berangkat", k.rute.waktu_berangkat);
+            map.put("waktu_berangkat", k.rute.tanggal_keberangkatan);
         } else {
             map.put("rute_id", null);
             map.put("rute_asal", null);
