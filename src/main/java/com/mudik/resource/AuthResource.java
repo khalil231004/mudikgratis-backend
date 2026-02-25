@@ -254,9 +254,8 @@ public class AuthResource {
                 <h1 style='color:#1e40af;'>🚌 MUDIK GRATIS ACEH</h1>
                 <p>Halo <b>%s</b>, silakan verifikasi akun Anda:</p>
                 <a href='%s' style='display:inline-block;background:#2563EB;color:white;padding:12px 24px;text-decoration:none;border-radius:5px;margin:20px 0;'>Verifikasi Akun</a>
-                <p style='font-size:12px;color:#666;'>Atau copy link ini: %s</p>
             </div></body></html>
-            """.formatted(nama, link, link);
+            """.formatted(nama, link);
     }
 
     // Template Reset Password 🔥 BARU

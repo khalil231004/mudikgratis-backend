@@ -48,9 +48,7 @@ public class WhatsAppService {
                             "Mohon maaf, Verifikasi Pendaftaran Mudik Anda *BELUM LENGKAP*.\n\n" +
                             "Catatan Petugas:\n" +
                             "👉 *" + alasanFinal + "*\n\n" +
-                            "ℹ️ *Perbaikan dapat dilakukan selama kuota masih tersedia.*\n\n" +
-                            "Mohon segera perbaiki data Anda melalui link dashboard berikut:";
-                    linkAction = baseUrl + "/login";
+                            "ℹ️ *Perbaikan dapat dilakukan selama kuota masih tersedia.*\n\n";
                     break;
 
                 case "DITERIMA(H-3)":
@@ -65,8 +63,7 @@ public class WhatsAppService {
                 default: // TERIMA
                     pesan = "👋 *Salam Seulamat dari Dishub Aceh*\n\n" +
                             "Halo Sdr/i *" + p.nama_peserta + "*,\n" +
-                            "Data pendaftaran Anda telah kami terima. Pantau terus status tiket Anda di Dashboard.";
-                    linkAction = baseUrl + "/login";
+                            "Data pendaftaran Anda telah kami terima. Pantau terus status tiket Anda di Dashboard.";;
                     break;
             }
 
@@ -90,7 +87,7 @@ public class WhatsAppService {
         if (hpFormat.startsWith("0")) hpFormat = "62" + hpFormat.substring(1);
 
         String baseUrl = frontendUrlOpt.orElse("https://dishubosrm.acehprov.go.id");
-        String hotline = "📞 *Hotline:* 0811-6800-XXX";
+        String hotline = "📞 *Hotline:* 08217653093";
         try {
             String pesan = "👋 *Salam Seulamat dari Dishub Aceh*\n\n" +
                     "Yth. Sdr/i *" + namaPeserta + "*,\n" +
