@@ -32,6 +32,19 @@ public class PublicResource {
         return Response.ok(file).build();
     }
 
+    // ✅ POIN 7: Endpoint untuk cek jumlah total NIK sudah terdaftar (public, untuk Register page)
+    @GET
+    @Path("/stats-pendaftar")
+    public Response statsPendaftar() {
+        long totalNik = com.mudik.model.PendaftaranMudik.count(
+                "status_pendaftaran NOT IN ('DIBATALKAN', 'DITOLAK')");
+        long totalAkun = com.mudik.model.User.count();
+        return Response.ok(Map.of(
+                "total_nik_terdaftar", totalNik,
+                "total_akun", totalAkun
+        )).build();
+    }
+
     // ✅ Endpoint untuk Frontend mengecek status via UUID (Tanpa Login)
     @GET
     @Path("/cek-status/{uuid}")

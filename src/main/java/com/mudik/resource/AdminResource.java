@@ -300,18 +300,130 @@ public class AdminResource {
     @GET
     @Path("/export")
     @Produces("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    public Response exportExcel(@QueryParam("rute_id") Long ruteId) {
+    public Response exportExcel(@QueryParam("rute_id") Long ruteId, @QueryParam("hanya_plotting") Boolean hanyaPlotting) {
         try {
             List<PendaftaranMudik> list;
-            if (ruteId != null) {
-                list = PendaftaranMudik.list("rute.rute_id = ?1 ORDER BY nama_peserta ASC", ruteId);
+            // POIN 1: Jika hanya_plotting=true, filter hanya yang sudah di-assign ke bus
+            if (Boolean.TRUE.equals(hanyaPlotting)) {
+                if (ruteId != null) {
+                    list = PendaftaranMudik.list(
+                            "rute.rute_id = ?1 AND kendaraan IS NOT NULL ORDER BY kendaraan.nama_armada ASC, nama_peserta ASC", ruteId);
+                } else {
+                    list = PendaftaranMudik.list(
+                            "kendaraan IS NOT NULL ORDER BY rute.tujuan ASC, kendaraan.nama_armada ASC, nama_peserta ASC");
+                }
             } else {
-                list = PendaftaranMudik.list("ORDER BY rute.tujuan ASC, nama_peserta ASC");
+                if (ruteId != null) {
+                    list = PendaftaranMudik.list("rute.rute_id = ?1 ORDER BY nama_peserta ASC", ruteId);
+                } else {
+                    list = PendaftaranMudik.list("ORDER BY rute.tujuan ASC, nama_peserta ASC");
+                }
             }
+            String filename = Boolean.TRUE.equals(hanyaPlotting) ? "Rekap_Sudah_Plotting.xlsx" : "Rekap_Mudik_Semua.xlsx";
             return Response.ok(excelService.generateLaporanExcel(list))
-                    .header("Content-Disposition", "attachment; filename=\"Rekap_Mudik.xlsx\"").build();
+                    .header("Content-Disposition", "attachment; filename=\"" + filename + "\"").build();
         } catch (IOException e) {
             return Response.serverError().entity(Map.of("error", "Gagal generate Excel")).build();
+        }
+    }
+
+    // =================================================================
+    // 6b. KONFIRMASI MANUAL OLEH ADMIN (POIN 6 - TOMBOL DARURAT)
+    // =================================================================
+    @PUT
+    @Path("/konfirmasi-manual/{userId}")
+    @Transactional
+    public Response konfirmasiManual(@PathParam("userId") Long userId, Map<String, Object> body) {
+        try {
+            List<PendaftaranMudik> keluarga = PendaftaranMudik.list("user.user_id = ?1", userId);
+            if (keluarga.isEmpty()) return Response.status(404).entity(Map.of("error", "User tidak ditemukan")).build();
+
+            List<Integer> rawIds = (List<Integer>) body.get("ids_konfirmasi");
+            List<Long> idsKonfirmasi = rawIds != null
+                    ? rawIds.stream().map(Integer::longValue).collect(Collectors.toList())
+                    : keluarga.stream().map(p -> p.pendaftaran_id).collect(Collectors.toList());
+
+            int dikonfirmasi = 0;
+            int dibatalkan = 0;
+
+            for (PendaftaranMudik p : keluarga) {
+                String st = p.status_pendaftaran;
+                boolean isDiterima = "DITERIMA H-3".equals(st) || st.contains("DITERIMA");
+                boolean isSiap = st.contains("SIAP BERANGKAT") || st.contains("TERKONFIRMASI");
+                if (!isDiterima && !isSiap) continue;
+
+                if (idsKonfirmasi.contains(p.pendaftaran_id)) {
+                    if (isDiterima) {
+                        p.status_pendaftaran = "TERVERIFIKASI/ SIAP BERANGKAT";
+                        p.persist();
+                        dikonfirmasi++;
+                    }
+                } else {
+                    // Batalkan
+                    if (!isSiap) { // jangan batalkan yang sudah SIAP jika tidak diminta
+                        if (p.rute != null && p.rute.kuota_terisi != null && p.rute.kuota_terisi > 0) {
+                            p.rute.kuota_terisi -= 1;
+                            p.rute.persist();
+                        }
+                        p.status_pendaftaran = "DIBATALKAN";
+                        p.persist();
+                        dibatalkan++;
+                    }
+                }
+            }
+
+            return Response.ok(Map.of(
+                    "status", "BERHASIL",
+                    "pesan", "Konfirmasi manual selesai. Dikonfirmasi: " + dikonfirmasi + ", Dibatalkan: " + dibatalkan,
+                    "dikonfirmasi", dikonfirmasi,
+                    "dibatalkan", dibatalkan
+            )).build();
+        } catch (Exception e) {
+            return Response.status(400).entity(Map.of("error", e.getMessage())).build();
+        }
+    }
+
+    // =================================================================
+    // 6c. BATALKAN PER ORANG (POIN 9 - Batalkan individual tanpa ubah status lain)
+    // =================================================================
+    @PUT
+    @Path("/batalkan-peserta/{id}")
+    @Transactional
+    public Response batalkanPeserta(@PathParam("id") Long id) {
+        try {
+            PendaftaranMudik p = PendaftaranMudik.findById(id);
+            if (p == null) return Response.status(404).entity(Map.of("error", "Peserta tidak ditemukan")).build();
+
+            // Jika sudah DIBATALKAN, jangan ubah apapun
+            if ("DIBATALKAN".equals(p.status_pendaftaran)) {
+                return Response.status(400).entity(Map.of("error", "Peserta sudah dibatalkan")).build();
+            }
+
+            // Kembalikan kuota rute (kecuali BAYI dan yang sudah DITOLAK)
+            if (!"BAYI".equalsIgnoreCase(p.kategori_penumpang) &&
+                    !"DITOLAK".equals(p.status_pendaftaran) &&
+                    p.rute != null && p.rute.kuota_terisi != null && p.rute.kuota_terisi > 0) {
+                p.rute.kuota_terisi -= 1;
+                p.rute.persist();
+            }
+
+            // Kembalikan kursi bus jika sudah plotting
+            if (p.kendaraan != null && p.kendaraan.terisi != null && p.kendaraan.terisi > 0) {
+                p.kendaraan.terisi -= 1;
+                p.kendaraan.persist();
+                p.kendaraan = null;
+            }
+
+            // HANYA ubah status peserta ini, tidak sentuh anggota keluarga lain
+            p.status_pendaftaran = "DIBATALKAN";
+            p.persist();
+
+            return Response.ok(Map.of(
+                    "status", "BERHASIL",
+                    "pesan", "Peserta " + p.nama_peserta + " berhasil dibatalkan"
+            )).build();
+        } catch (Exception e) {
+            return Response.status(400).entity(Map.of("error", e.getMessage())).build();
         }
     }
 
