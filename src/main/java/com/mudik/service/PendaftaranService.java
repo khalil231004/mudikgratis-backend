@@ -18,9 +18,7 @@ import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.time.LocalDate;
 import java.time.Period;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 
 @ApplicationScoped
 public class PendaftaranService {
@@ -162,7 +160,7 @@ public class PendaftaranService {
         ruteLocked.persist();
     }
 
-    // =================================================================
+    // =================================================================h
     // 2. PROSES KONFIRMASI KEHADIRAN (BATCH)
     // =================================================================
     @Transactional
