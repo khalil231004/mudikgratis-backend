@@ -36,7 +36,7 @@ public class WhatsAppService {
         String pesan = "";
         String linkAction = "";
         // FIX 9: Tambahkan Hotline nomor
-        String hotline = "📞 *Hotline Mudik Gratis Dishub Aceh:*\n0811-6800-XXX (WhatsApp)";
+        String hotline = "📞 *Hotline Mudik Gratis Dishub Aceh:*\n08217653093 (WhatsApp)";
         String footer = "\n\n" + hotline + "\n\n_Pesan otomatis Sistem Mudik Gratis Dishub Aceh_";
 
         try {
