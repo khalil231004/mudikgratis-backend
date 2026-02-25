@@ -51,23 +51,24 @@ public class WhatsAppService {
                             "ℹ️ *Perbaikan dapat dilakukan selama kuota masih tersedia.*\n\n";
                     break;
 
+                // ── Kirim link konfirmasi (hanya dipanggil via endpoint kirim-link-konfirmasi)
                 case "DITERIMA(H-3)":
+                    pesan = "👋 *Salam Seulamat dari Dishub Aceh*\n\n" +
+                            "Yth. Sdr/i *" + p.nama_peserta + "*,\n" +
+                            "Ini adalah link konfirmasi kehadiran Anda. Mohon segera lakukan konfirmasi kehadiran melalui link berikut:\n\n";
+                    linkAction = baseUrl + "/konfirmasi/" + p.uuid;
+                    break;
+
+                // ── Notif diterima (tanpa link konfirmasi) — dipanggil saat admin klik Terima
+                default: // TERIMA
                     pesan = "👋 *Salam Seulamat dari Dishub Aceh*\n\n" +
                             "Yth. Sdr/i *" + p.nama_peserta + "*,\n" +
                             "Selamat! Pendaftaran Mudik Anda telah *DITERIMA*.\n\n" +
                             "🚍 *PENTING: KONFIRMASI KEBERANGKATAN*\n" +
-                            "Agar kursi Anda tidak hangus, WAJIB melakukan konfirmasi kehadiran melalui link ini:";
-                    linkAction = baseUrl + "/konfirmasi/" + p.uuid;
-                    break;
-
-                default: // TERIMA
-                    pesan = "👋 *Salam Seulamat dari Dishub Aceh*\n\n" +
-                            "Halo Sdr/i *" + p.nama_peserta + "*,\n" +
-                            "Selamat! Data pendaftaran Anda telah *DITERIMA* dan terverifikasi.\n\n" +
-                            "📋 *Langkah Selanjutnya:*\n" +
-                            "Silakan pantau terus status tiket Anda di Dashboard aplikasi Seulamat.\n\n" +
-                            "⏳ *Tunggu link konfirmasi kehadiran* yang akan dikirimkan oleh Admin Dishub Aceh sesuai jadwal yang telah ditentukan (10-11 Maret 2026).\n\n" +
-                            "Jangan lakukan konfirmasi sebelum menerima link dari Admin.";
+                            "Agar kursi Anda tidak hangus, WAJIB melakukan konfirmasi kehadiran " +
+                            "yang akan *dikirimkan admin* sesuai jadwal. " +
+                            "Nanti Anda bisa konfirmasi langsung di *Dashboard* aplikasi Seulamat maupun via link WA yang akan kami kirimkan.\n\n" +
+                            "Pantau terus status tiket Anda di Dashboard aplikasi Seulamat.";
                     break;
             }
 

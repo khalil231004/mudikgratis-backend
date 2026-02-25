@@ -100,6 +100,7 @@ public class PendaftaranResource {
                 }
 
                 map.put("nama_bus", p.kendaraan != null ? p.kendaraan.nama_armada : "Menunggu Plotting");
+                map.put("plat_nomor", p.kendaraan != null ? p.kendaraan.plat_nomor : null);
 
                 // ── FLAG: apakah admin sudah kirim link konfirmasi ke user ini
                 map.put("link_konfirmasi_dikirim", p.link_konfirmasi_dikirim);
