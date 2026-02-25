@@ -35,14 +35,14 @@ public class PendaftaranResource {
     }
 
     // ==========================================
-    // 🔥 HELPER SAKTI: RESOLVE USER ID (FIX 404)
+    // 🚀 HELPER SAKTI: RESOLVE USER ID (FIX 404)
     // ==========================================
     private Long resolveUserId(String idStr) {
         if (idStr == null || idStr.isEmpty() || "undefined".equals(idStr)) {
             throw new WebApplicationException("User ID tidak valid/kosong", 400);
         }
 
-        // 🔥 FIX: Kalau header duplikat dikirim (misal "30, 30"), ambil nilai pertama saja
+        // 🚀 FIX: Kalau header duplikat dikirim (misal "30, 30"), ambil nilai pertama saja
         String cleaned = idStr.split(",")[0].trim().replace("\"", "");
 
         if (cleaned.isEmpty() || "undefined".equals(cleaned)) {
@@ -69,7 +69,7 @@ public class PendaftaranResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response riwayatPendaftaran(@HeaderParam("userId") String userIdStr) {
         try {
-            Long userId = resolveUserId(userIdStr); // 🔥 Auto-convert
+            Long userId = resolveUserId(userIdStr); // 🚀 Auto-convert
 
             List<PendaftaranMudik> list = PendaftaranMudik.list("user.user_id = ?1 ORDER BY created_at DESC", userId);
             List<Map<String, Object>> result = new ArrayList<>();
@@ -104,7 +104,7 @@ public class PendaftaranResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response daftarBatch(@HeaderParam("userId") String userIdStr, @QueryParam("rute_id") Long ruteId, PendaftaranMultipartForm form) {
         try {
-            Long userId = resolveUserId(userIdStr); // 🔥 Auto-convert
+            Long userId = resolveUserId(userIdStr); // 🚀 Auto-convert
 
             if (ruteId == null) return Response.status(400).entity(Map.of("error", "Pilih rute!")).build();
             if (form.nama_peserta == null || form.nama_peserta.isEmpty()) return Response.status(400).entity(Map.of("error", "Peserta kosong!")).build();
@@ -126,7 +126,7 @@ public class PendaftaranResource {
     @Path("/konfirmasi-kehadiran/{userId}")
     public Response konfirmasiKehadiran(@PathParam("userId") String userIdStr, Map<String, List<Long>> body) {
         try {
-            // 🔥 INI FIX UTAMANYA: Terima String -> Cari ID Asli -> Proses
+            // 🚀 INI FIX UTAMANYA: Terima String -> Cari ID Asli -> Proses
             Long userId = resolveUserId(userIdStr);
 
             List<Long> ids = body.get("ids_konfirmasi");
@@ -150,7 +150,7 @@ public class PendaftaranResource {
                                  @HeaderParam("userId") String userIdStr,
                                  PendaftaranMultipartForm form) {
         try {
-            Long userId = resolveUserId(userIdStr); // 🔥 Auto-convert
+            Long userId = resolveUserId(userIdStr); // 🚀 Auto-convert
 
             pendaftaranService.editPendaftaran(userId, pendaftaranId, form);
 
@@ -159,6 +159,31 @@ public class PendaftaranResource {
                     "pesan", "Data berhasil diperbaiki. Menunggu Verifikasi."
             )).build();
         } catch (Exception e) {
+            return Response.status(400).entity(Map.of("error", e.getMessage())).build();
+        }
+    }
+
+    // ==========================================================
+    // 5. GET PAGINATED UNTUK ADMIN (ENDPOINT BARU)
+    // ==========================================================
+    @GET
+    @Path("/admin/paginated")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getPendaftarPaginated(
+            @QueryParam("page") Integer page,
+            @QueryParam("limit") Integer limit,
+            @QueryParam("search") String search,
+            @QueryParam("rute") String rute,
+            @QueryParam("status") String status) {
+        try {
+            // Berikan default value jika null
+            int pageNum = (page != null && page > 0) ? page : 1;
+            int limitNum = (limit != null && limit > 0) ? limit : 50;
+
+            Map<String, Object> result = pendaftaranService.getPendaftarAdminPaginated(pageNum, limitNum, search, rute, status);
+            return Response.ok(result).build();
+        } catch (Exception e) {
+            e.printStackTrace();
             return Response.status(400).entity(Map.of("error", e.getMessage())).build();
         }
     }
