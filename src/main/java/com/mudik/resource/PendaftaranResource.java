@@ -101,6 +101,9 @@ public class PendaftaranResource {
 
                 map.put("nama_bus", p.kendaraan != null ? p.kendaraan.nama_armada : "Menunggu Plotting");
 
+                // ── FLAG: apakah admin sudah kirim link konfirmasi ke user ini
+                map.put("link_konfirmasi_dikirim", p.link_konfirmasi_dikirim);
+
                 if (p.foto_identitas_path != null && !p.foto_identitas_path.isBlank()) {
                     map.put("foto_bukti", "/uploads/" + new java.io.File(p.foto_identitas_path).getName());
                 } else {
@@ -166,6 +169,17 @@ public class PendaftaranResource {
             List<Long> ids = body.get("ids_konfirmasi");
             if (ids == null)
                 return Response.status(400).entity(Map.of("error", "Data 'ids_konfirmasi' tidak ditemukan")).build();
+
+            // ── PENTING: Cek apakah admin sudah kirim link konfirmasi ke keluarga ini
+            // Konfirmasi hanya bisa dilakukan jika admin sudah mengirim link via WA H-3
+            long sudahDikirim = PendaftaranMudik.count(
+                    "user.user_id = ?1 AND link_konfirmasi_dikirim = true", userId);
+            if (sudahDikirim == 0) {
+                return Response.status(403).entity(Map.of(
+                        "error", "Konfirmasi belum tersedia. Silakan tunggu admin mengirim link konfirmasi sesuai jadwal.",
+                        "kode", "LINK_BELUM_DIKIRIM"
+                )).build();
+            }
 
             String pesan = pendaftaranService.prosesKonfirmasi(userId, ids);
             return Response.ok(Map.of("status", "BERHASIL", "message", pesan)).build();

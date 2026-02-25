@@ -246,6 +246,18 @@ public class AdminResource {
             return Response.status(400).entity(Map.of("error", "Data tidak ditemukan atau belum SIAP.")).build();
         }
 
+        // 2b. Validasi Rute: Bus harus sesuai rute peserta
+        PendaftaranMudik firstPeserta = keluarga.get(0);
+        if (firstPeserta.rute != null && busBaru.rute != null) {
+            if (!firstPeserta.rute.rute_id.equals(busBaru.rute.rute_id)) {
+                return Response.status(400).entity(Map.of(
+                        "error", "Bus ini tidak sesuai rute! Peserta terdaftar di rute '"
+                                + firstPeserta.rute.tujuan + "', sedangkan bus ini untuk rute '"
+                                + busBaru.rute.tujuan + "'. Pilih bus yang sesuai rute peserta."
+                )).build();
+            }
+        }
+
         // 3. Cek Kapasitas
         if (busBaru.terisi + keluarga.size() > busBaru.kapasitas_total) {
             return Response.status(400).entity(Map.of("error", "Bus Penuh! Sisa: " + (busBaru.kapasitas_total - busBaru.terisi))).build();
@@ -264,6 +276,47 @@ public class AdminResource {
         busBaru.persist();
 
         return Response.ok(Map.of("status", "BERHASIL", "pesan", "Keluarga masuk bus " + busBaru.nama_armada)).build();
+    }
+
+    // =================================================================
+    // 4b. KIRIM LINK KONFIRMASI (Admin — set flag agar user bisa konfirmasi)
+    // =================================================================
+    @POST
+    @Path("/kirim-link-konfirmasi/{userId}")
+    @Transactional
+    public Response kirimLinkKonfirmasi(@PathParam("userId") Long userId) {
+        try {
+            List<PendaftaranMudik> keluarga = PendaftaranMudik.list(
+                    "user.user_id = ?1 AND status_pendaftaran = 'DITERIMA H-3'", userId);
+
+            if (keluarga.isEmpty()) {
+                return Response.status(400).entity(Map.of(
+                        "error", "Tidak ada peserta dengan status DITERIMA H-3 untuk keluarga ini."
+                )).build();
+            }
+
+            // Set flag link_konfirmasi_dikirim = true untuk semua anggota keluarga
+            PendaftaranMudik wakil = keluarga.get(0);
+            String targetHp = (wakil.no_hp_peserta != null && wakil.no_hp_peserta.length() > 5)
+                    ? wakil.no_hp_peserta
+                    : (wakil.user != null ? wakil.user.no_hp : "");
+
+            for (PendaftaranMudik p : keluarga) {
+                p.link_konfirmasi_dikirim = true;
+                p.persist();
+            }
+
+            // Generate link WA konfirmasi
+            String linkWa = waService.generateLink(targetHp, "DITERIMA(H-3)", wakil, null);
+
+            return Response.ok(Map.of(
+                    "status", "BERHASIL",
+                    "pesan", "Link konfirmasi berhasil dikirim ke " + keluarga.size() + " peserta.",
+                    "link_wa", linkWa
+            )).build();
+        } catch (Exception e) {
+            return Response.status(400).entity(Map.of("error", e.getMessage())).build();
+        }
     }
 
     // =================================================================

@@ -441,6 +441,7 @@ public class PendaftaranService {
             m.put("id_keluarga",          p.user     != null ? p.user.user_id        : 0L);
             m.put("nama_kepala_keluarga", p.user     != null ? p.user.nama_lengkap   : "Tanpa Akun");
             m.put("rute_tujuan",          p.rute     != null ? p.rute.tujuan         : "Unknown");
+            m.put("rute_id",              p.rute     != null ? p.rute.rute_id        : null);
             m.put("tgl_berangkat",        p.rute     != null ? p.rute.getFormattedDate() : "-");
             m.put("nama_bus",             p.kendaraan != null ? p.kendaraan.nama_armada : "Belum Plotting");
             String hp = (p.no_hp_peserta != null && p.no_hp_peserta.length() > 5)

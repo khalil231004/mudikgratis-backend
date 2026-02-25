@@ -53,6 +53,12 @@ public class PendaftaranMudik extends PanacheEntityBase {
     // Fitur Blacklist
     public boolean is_blacklisted;
 
+    // ── LINK KONFIRMASI ──────────────────────────────────────────────
+    // Diset true ketika admin menggunakan fitur "Kirim Link Konfirmasi" via WA H-3.
+    // Tombol konfirmasi di dashboard user hanya aktif jika flag ini true.
+    @Column(name = "link_konfirmasi_dikirim", nullable = false, columnDefinition = "boolean DEFAULT false")
+    public boolean link_konfirmasi_dikirim = false;
+
     // ── LOCK KELUARGA ─────────────────────────────────────────────
     // Diset true jika salah satu anggota keluarga (1 akun) ditolak.
     // Anggota lain tidak bisa berubah status sampai masalah diselesaikan.

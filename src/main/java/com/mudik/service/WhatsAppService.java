@@ -63,7 +63,11 @@ public class WhatsAppService {
                 default: // TERIMA
                     pesan = "👋 *Salam Seulamat dari Dishub Aceh*\n\n" +
                             "Halo Sdr/i *" + p.nama_peserta + "*,\n" +
-                            "Data pendaftaran Anda telah kami terima. Pantau terus status tiket Anda di Dashboard.";;
+                            "Selamat! Data pendaftaran Anda telah *DITERIMA* dan terverifikasi.\n\n" +
+                            "📋 *Langkah Selanjutnya:*\n" +
+                            "Silakan pantau terus status tiket Anda di Dashboard aplikasi Seulamat.\n\n" +
+                            "⏳ *Tunggu link konfirmasi kehadiran* yang akan dikirimkan oleh Admin Dishub Aceh sesuai jadwal yang telah ditentukan (10-11 Maret 2026).\n\n" +
+                            "Jangan lakukan konfirmasi sebelum menerima link dari Admin.";
                     break;
             }
 
