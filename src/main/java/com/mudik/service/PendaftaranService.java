@@ -18,11 +18,7 @@ import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.time.LocalDate;
 import java.time.Period;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 
 @ApplicationScoped
 public class PendaftaranService {
@@ -424,6 +420,7 @@ public class PendaftaranService {
         return whatsAppService.generateLink(hpValid, tipeWa, keluarga.get(0), pesanAlasan);
     }
 
+
     // =================================================================
     // 8. ADMIN: GET PENDAFTAR PAGINATED (DENGAN FILTER & LIMIT)
     // =================================================================
@@ -431,9 +428,8 @@ public class PendaftaranService {
         StringBuilder queryStr = new StringBuilder("1=1");
         Map<String, Object> params = new HashMap<>();
 
-        // Buat query filter
         if (search != null && !search.trim().isEmpty()) {
-            queryStr.append(" AND (LOWER(p.nama_peserta) LIKE :search OR p.nik_peserta LIKE :search)");
+            queryStr.append(" AND (LOWER(p.nama_peserta) LIKE :search OR p.nik_peserta LIKE :search OR LOWER(p.user.nama_lengkap) LIKE :search)");
             params.put("search", "%" + search.toLowerCase() + "%");
         }
         if (rute != null && !rute.trim().isEmpty()) {
@@ -445,43 +441,40 @@ public class PendaftaranService {
                 queryStr.append(" AND (p.status_pendaftaran LIKE '%SIAP BERANGKAT%' OR p.status_pendaftaran LIKE '%TERKONFIRMASI%')");
             } else {
                 queryStr.append(" AND p.status_pendaftaran = :status");
-                params.put("status", status.replace(" ", "_"));
+                params.put("status", status);
             }
         }
 
-        // 1. Hitung total keluarga (DISTINCT user_id) untuk pagination
+        // Hitung total keluarga (DISTINCT user_id)
         var countQuery = PendaftaranMudik.getEntityManager().createQuery(
                 "SELECT COUNT(DISTINCT p.user.user_id) FROM PendaftaranMudik p WHERE " + queryStr.toString(), Long.class);
         for (Map.Entry<String, Object> entry : params.entrySet()) {
             countQuery.setParameter(entry.getKey(), entry.getValue());
         }
-
         long totalKeluarga = countQuery.getSingleResult();
         int totalPages = (int) Math.ceil((double) totalKeluarga / limit);
+        if (totalPages == 0) totalPages = 1;
 
-        // 2. Ambil ID Keluarga (user_id) sesuai limit dan halaman (offset)
+        // Ambil ID Keluarga (user_id) sesuai limit dan halaman
         var userQuery = PendaftaranMudik.getEntityManager().createQuery(
-                "SELECT DISTINCT p.user.user_id FROM PendaftaranMudik p WHERE " + queryStr.toString(), Long.class);
+                "SELECT DISTINCT p.user.user_id FROM PendaftaranMudik p WHERE " + queryStr.toString() + " ORDER BY p.user.user_id DESC", Long.class);
         for (Map.Entry<String, Object> entry : params.entrySet()) {
             userQuery.setParameter(entry.getKey(), entry.getValue());
         }
-
         int offset = (page - 1) * limit;
         List<Long> paginatedUserIds = userQuery.setFirstResult(offset).setMaxResults(limit).getResultList();
 
-        // 3. Tarik data Pendaftaran lengkap berdasarkan ID Keluarga tersebut
+        // Tarik data Pendaftaran lengkap berdasarkan ID Keluarga
         List<PendaftaranMudik> resultData = new ArrayList<>();
         if (!paginatedUserIds.isEmpty()) {
             resultData = PendaftaranMudik.list("user.user_id IN ?1 ORDER BY created_at DESC", paginatedUserIds);
         }
 
-        // Return Data
         Map<String, Object> response = new HashMap<>();
         response.put("data", resultData);
         response.put("totalKeluarga", totalKeluarga);
         response.put("totalPages", totalPages);
         response.put("currentPage", page);
-
         return response;
     }
 

@@ -78,6 +78,66 @@ public class AdminResource {
         return Response.ok(result).build();
     }
 
+
+    // =================================================================
+    // 1b. GET PENDAFTAR PAGINATED (UNTUK TABEL ADMIN - BARU)
+    // =================================================================
+    @GET
+    @Path("/pendaftar/paginated")
+    public Response getPendaftarPaginated(
+            @QueryParam("page") Integer page,
+            @QueryParam("limit") Integer limit,
+            @QueryParam("search") String search,
+            @QueryParam("rute") String rute,
+            @QueryParam("status") String status) {
+        try {
+            int pageNum = (page != null && page > 0) ? page : 1;
+            int limitNum = (limit != null && limit > 0) ? limit : 30;
+
+            Map<String, Object> raw = pendaftaranService.getPendaftarAdminPaginated(pageNum, limitNum, search, rute, status);
+
+            // Konversi PendaftaranMudik -> Map (sama seperti getAllPendaftar)
+            @SuppressWarnings("unchecked")
+            java.util.List<PendaftaranMudik> list = (java.util.List<PendaftaranMudik>) raw.get("data");
+
+            java.util.List<Map<String, Object>> mapped = list.stream().map(p -> {
+                Map<String, Object> map = new HashMap<>();
+                map.put("id", p.pendaftaran_id);
+                map.put("uuid", (p.uuid != null) ? p.uuid : "");
+                map.put("nama_peserta", p.nama_peserta);
+                map.put("nik_peserta", p.nik_peserta);
+                map.put("jenis_kelamin", p.jenis_kelamin);
+                map.put("kategori", (p.kategori_penumpang != null) ? p.kategori_penumpang : "");
+                map.put("status", (p.status_pendaftaran != null) ? p.status_pendaftaran : "UNKNOWN");
+                map.put("kode_booking", (p.kode_booking != null) ? p.kode_booking : "-");
+                map.put("alasan_tolak", (p.alasan_tolak != null) ? p.alasan_tolak : "-");
+                map.put("id_keluarga", (p.user != null) ? p.user.user_id : 0);
+                map.put("nama_kepala_keluarga", (p.user != null) ? p.user.nama_lengkap : "Tanpa Akun");
+                map.put("rute_tujuan", (p.rute != null) ? p.rute.tujuan : "Unknown");
+                map.put("tgl_berangkat", (p.rute != null) ? p.rute.getFormattedDate() : "-");
+                map.put("nama_bus", (p.kendaraan != null) ? p.kendaraan.nama_armada : "Belum Plotting");
+                String targetHp = (p.no_hp_peserta != null && p.no_hp_peserta.length() > 5)
+                        ? p.no_hp_peserta : ((p.user != null) ? p.user.no_hp : "");
+                map.put("no_hp_target", targetHp != null ? targetHp : "");
+                if (p.foto_identitas_path != null) {
+                    map.put("foto_bukti", "/uploads/" + new java.io.File(p.foto_identitas_path).getName());
+                }
+                return map;
+            }).collect(java.util.stream.Collectors.toList());
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("data", mapped);
+            response.put("totalKeluarga", raw.get("totalKeluarga"));
+            response.put("totalPages", raw.get("totalPages"));
+            response.put("currentPage", raw.get("currentPage"));
+
+            return Response.ok(response).build();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Response.status(400).entity(Map.of("error", e.getMessage())).build();
+        }
+    }
+
     // =================================================================
     // 2. VERIFIKASI KELUARGA (BATCH)
     // =================================================================
