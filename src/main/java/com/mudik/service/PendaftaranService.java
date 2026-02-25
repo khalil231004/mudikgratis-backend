@@ -213,7 +213,7 @@ public class PendaftaranService {
                 int umur = Period.between(tgl, LocalDate.now()).getYears();
                 if (umur < 2) {
                     p.kategori_penumpang = "BAYI";
-                } else if (umur < 17) {
+                } else if (umur < 3) {
                     p.kategori_penumpang = "ANAK";
                 } else {
                     p.kategori_penumpang = "DEWASA";
