@@ -81,8 +81,7 @@ public class BotPendaftaranService {
             try {
                 tglLahir = LocalDate.parse(listTglLahir.get(i));
                 int umur = Period.between(tglLahir, LocalDate.now()).getYears();
-                // FIX: Gunakan "ANAK-ANAK" (konsisten frontend), batas anak 2-16 tahun
-                kategori = (umur < 2) ? "BAYI" : (umur < 17) ? "ANAK-ANAK" : "DEWASA";
+                kategori = (umur < 2) ? "BAYI" : (umur < 3) ? "ANAK" : "DEWASA";
             } catch (Exception e) {
                 tglLahir = LocalDate.now();
                 kategori = "DEWASA";

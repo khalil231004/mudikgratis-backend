@@ -47,37 +47,25 @@ public class UserResource {
     @GET
     @Path("/profile")
     public Response getMyProfile() {
+        // FIX: gunakan userId dari header seperti endpoint lain, bukan email (yg ada bug static import)
         try {
+            String userIdStr = identity.getAttribute("user_id") != null
+                    ? identity.getAttribute("user_id").toString()
+                    : identity.getPrincipal().getName();
+            // Try by userId first, fall back to email
             User user = null;
-
-            // FIX: JWT menyimpan userId di claim "id_user", bukan "user_id"
-            Object idUserAttr = identity.getAttribute("id_user");
-            if (idUserAttr != null) {
-                try {
-                    Long uid = Long.parseLong(idUserAttr.toString());
-                    user = User.findById(uid);
-                } catch (NumberFormatException ignored) {}
+            try {
+                Long uid = Long.parseLong(userIdStr);
+                user = User.findById(uid);
+            } catch (NumberFormatException e) {
+                // principal is email
+                user = User.find("email", userIdStr).firstResult();
             }
-
-            // Fallback: coba "user_id" (nama lama)
             if (user == null) {
-                Object userIdAttr = identity.getAttribute("user_id");
-                if (userIdAttr != null) {
-                    try {
-                        Long uid = Long.parseLong(userIdAttr.toString());
-                        user = User.findById(uid);
-                    } catch (NumberFormatException ignored) {}
-                }
-            }
-
-            // Fallback: cari via email dari "upn" (principal name di Quarkus JWT)
-            if (user == null) {
+                // last resort: try email from JWT subject
                 String email = identity.getPrincipal().getName();
-                if (email != null && email.contains("@")) {
-                    user = User.find("email", email).firstResult();
-                }
+                user = User.find("email", email).firstResult();
             }
-
             if (user == null) return Response.status(404).entity(Map.of("error","User tidak ditemukan")).build();
 
             return Response.ok(Map.of(
