@@ -425,60 +425,109 @@ public class PendaftaranService {
     // 8. ADMIN: GET PENDAFTAR PAGINATED (DENGAN FILTER & LIMIT)
     // =================================================================
     public Map<String, Object> getPendaftarAdminPaginated(int page, int limit, String search, String rute, String status) {
-        StringBuilder queryStr = new StringBuilder("1=1");
+
+        // ── Build WHERE clause (pakai native JPQL alias 'p') ──────
+        StringBuilder where = new StringBuilder("p.user IS NOT NULL");
         Map<String, Object> params = new HashMap<>();
 
         if (search != null && !search.trim().isEmpty()) {
-            queryStr.append(" AND (LOWER(p.nama_peserta) LIKE :search OR p.nik_peserta LIKE :search OR LOWER(p.user.nama_lengkap) LIKE :search)");
-            params.put("search", "%" + search.toLowerCase() + "%");
+            where.append(" AND (LOWER(p.nama_peserta) LIKE :search"
+                    + " OR p.nik_peserta LIKE :search"
+                    + " OR LOWER(p.user.nama_lengkap) LIKE :search)");
+            params.put("search", "%" + search.trim().toLowerCase() + "%");
         }
         if (rute != null && !rute.trim().isEmpty()) {
-            queryStr.append(" AND p.rute.tujuan = :rute");
-            params.put("rute", rute);
+            where.append(" AND p.rute.tujuan = :rute");
+            params.put("rute", rute.trim());
         }
         if (status != null && !status.trim().isEmpty()) {
-            if (status.equals("SIAP BERANGKAT")) {
-                queryStr.append(" AND (p.status_pendaftaran LIKE '%SIAP BERANGKAT%' OR p.status_pendaftaran LIKE '%TERKONFIRMASI%')");
+            if ("SIAP BERANGKAT".equals(status.trim())) {
+                where.append(" AND (p.status_pendaftaran LIKE '%SIAP BERANGKAT%'"
+                        + " OR p.status_pendaftaran LIKE '%TERKONFIRMASI%')");
             } else {
-                queryStr.append(" AND p.status_pendaftaran = :status");
-                params.put("status", status);
+                where.append(" AND p.status_pendaftaran = :status");
+                params.put("status", status.trim());
             }
         }
 
-        // Hitung total keluarga (DISTINCT user_id)
-        var countQuery = PendaftaranMudik.getEntityManager().createQuery(
-                "SELECT COUNT(DISTINCT p.user.user_id) FROM PendaftaranMudik p WHERE " + queryStr.toString(), Long.class);
-        for (Map.Entry<String, Object> entry : params.entrySet()) {
-            countQuery.setParameter(entry.getKey(), entry.getValue());
-        }
-        long totalKeluarga = countQuery.getSingleResult();
-        int totalPages = (int) Math.ceil((double) totalKeluarga / limit);
-        if (totalPages == 0) totalPages = 1;
+        // ── 1. Hitung total keluarga (DISTINCT user_id) ───────────
+        StringBuilder countJpql = new StringBuilder(
+                "SELECT COUNT(DISTINCT p.user.user_id) FROM PendaftaranMudik p WHERE ");
+        countJpql.append(where);
 
-        // Ambil ID Keluarga (user_id) sesuai limit dan halaman
-        var userQuery = PendaftaranMudik.getEntityManager().createQuery(
-                "SELECT DISTINCT p.user.user_id FROM PendaftaranMudik p WHERE " + queryStr.toString() + " ORDER BY p.user.user_id DESC", Long.class);
-        for (Map.Entry<String, Object> entry : params.entrySet()) {
-            userQuery.setParameter(entry.getKey(), entry.getValue());
-        }
+        var countQ = PendaftaranMudik.getEntityManager()
+                .createQuery(countJpql.toString(), Long.class);
+        params.forEach(countQ::setParameter);
+        long totalKeluarga = countQ.getSingleResult();
+        int totalPages = totalKeluarga == 0 ? 1 : (int) Math.ceil((double) totalKeluarga / limit);
+
+        // ── 2. Ambil user_id halaman ini ──────────────────────────
+        StringBuilder userJpql = new StringBuilder(
+                "SELECT DISTINCT p.user.user_id FROM PendaftaranMudik p WHERE ");
+        userJpql.append(where).append(" ORDER BY p.user.user_id DESC");
+
+        var userQ = PendaftaranMudik.getEntityManager()
+                .createQuery(userJpql.toString(), Long.class);
+        params.forEach(userQ::setParameter);
         int offset = (page - 1) * limit;
-        List<Long> paginatedUserIds = userQuery.setFirstResult(offset).setMaxResults(limit).getResultList();
+        List<Long> userIds = userQ.setFirstResult(offset).setMaxResults(limit).getResultList();
 
-        // Tarik data Pendaftaran lengkap berdasarkan ID Keluarga
-        List<PendaftaranMudik> resultData = new ArrayList<>();
-        if (!paginatedUserIds.isEmpty()) {
-            resultData = PendaftaranMudik.list("user.user_id IN ?1 ORDER BY created_at DESC", paginatedUserIds);
+        // ── 3. Ambil semua pendaftaran untuk user_id tersebut ─────
+        List<PendaftaranMudik> rows = new ArrayList<>();
+        if (!userIds.isEmpty()) {
+            var dataQ = PendaftaranMudik.getEntityManager().createQuery(
+                    "SELECT p FROM PendaftaranMudik p"
+                            + " LEFT JOIN FETCH p.user"
+                            + " LEFT JOIN FETCH p.rute"
+                            + " LEFT JOIN FETCH p.kendaraan"
+                            + " WHERE p.user.user_id IN :ids"
+                            + " ORDER BY p.user.user_id DESC, p.created_at DESC",
+                    PendaftaranMudik.class);
+            dataQ.setParameter("ids", userIds);
+            rows = dataQ.getResultList();
+        }
+
+        // ── 4. Map ke DTO ─────────────────────────────────────────
+        List<Map<String, Object>> mapped = new ArrayList<>();
+        for (PendaftaranMudik p : rows) {
+            Map<String, Object> m = new HashMap<>();
+            m.put("id",               p.pendaftaran_id);
+            m.put("uuid",             p.uuid != null ? p.uuid : "");
+            m.put("nama_peserta",     p.nama_peserta);
+            m.put("nik_peserta",      p.nik_peserta);
+            m.put("jenis_kelamin",    p.jenis_kelamin != null ? p.jenis_kelamin : "");
+            m.put("kategori",         p.kategori_penumpang != null ? p.kategori_penumpang : "");
+            m.put("status",           p.status_pendaftaran != null ? p.status_pendaftaran : "UNKNOWN");
+            m.put("kode_booking",     p.kode_booking != null ? p.kode_booking : "-");
+            m.put("alasan_tolak",     p.alasan_tolak != null ? p.alasan_tolak : "-");
+            m.put("id_keluarga",      p.user != null ? p.user.user_id : 0);
+            m.put("nama_kepala_keluarga", p.user != null ? p.user.nama_lengkap : "Tanpa Akun");
+            m.put("rute_tujuan",      p.rute != null ? p.rute.tujuan : "Unknown");
+            m.put("tgl_berangkat",    p.rute != null ? p.rute.getFormattedDate() : "-");
+            m.put("nama_bus",         p.kendaraan != null ? p.kendaraan.nama_armada : "Belum Plotting");
+
+            String hp = (p.no_hp_peserta != null && p.no_hp_peserta.length() > 5)
+                    ? p.no_hp_peserta
+                    : (p.user != null && p.user.no_hp != null ? p.user.no_hp : "");
+            m.put("no_hp_target", hp);
+
+            if (p.foto_identitas_path != null && !p.foto_identitas_path.isBlank()) {
+                m.put("foto_bukti", "/uploads/" + new java.io.File(p.foto_identitas_path).getName());
+            } else {
+                m.put("foto_bukti", null);
+            }
+            mapped.add(m);
         }
 
         Map<String, Object> response = new HashMap<>();
-        response.put("data", resultData);
+        response.put("data",          mapped);
         response.put("totalKeluarga", totalKeluarga);
-        response.put("totalPages", totalPages);
-        response.put("currentPage", page);
+        response.put("totalPages",    totalPages);
+        response.put("currentPage",   page);
         return response;
     }
 
-    // 🔥 HELPER: CARI HP VALID (PENUMPANG -> USER)
+    // 🔥 HELPER: CARI HP VALID    // 🔥 HELPER: CARI HP VALID (PENUMPANG -> USER)
     private String getValidPhoneNumber(List<PendaftaranMudik> keluarga) {
         if (keluarga == null || keluarga.isEmpty()) return null;
 
