@@ -264,18 +264,69 @@ public class AdminResource {
         }
 
         // 4. Proses Plotting / Pindah Bus
+        // FIX 1: Cegah duplikat — skip penumpang yang sudah ada di bus yang sama
+        int addedCount = 0;
         for (PendaftaranMudik p : keluarga) {
+            if (p.kendaraan != null && p.kendaraan.id.equals(busBaru.id)) {
+                // Sudah di bus yang sama, skip tanpa tambah kuota lagi
+                continue;
+            }
             if (p.kendaraan != null && !p.kendaraan.id.equals(busBaru.id)) {
-                p.kendaraan.terisi -= 1;
+                // Pindah bus: kurangi kursi bus lama
+                p.kendaraan.terisi = Math.max(0, (p.kendaraan.terisi != null ? p.kendaraan.terisi : 0) - 1);
                 p.kendaraan.persist();
             }
             p.kendaraan = busBaru;
             busBaru.terisi += 1;
+            addedCount++;
             p.persist();
+        }
+        if (addedCount == 0) {
+            return Response.status(400).entity(Map.of("error", "Semua peserta sudah di-plotting ke bus ini sebelumnya.")).build();
         }
         busBaru.persist();
 
         return Response.ok(Map.of("status", "BERHASIL", "pesan", "Keluarga masuk bus " + busBaru.nama_armada)).build();
+    }
+
+    // =================================================================
+    // 4c. BATALKAN PLOTTING BUS (kembalikan kursi bus)
+    // =================================================================
+    @POST
+    @Path("/batalkan-plotting/{userId}")
+    @Transactional
+    public Response batalkanPlotting(@PathParam("userId") Long userId) {
+        List<PendaftaranMudik> keluarga = PendaftaranMudik.list(
+                "user.user_id = ?1 AND kendaraan IS NOT NULL AND status_pendaftaran = 'TERVERIFIKASI/ SIAP BERANGKAT'", userId);
+
+        if (keluarga.isEmpty()) {
+            return Response.status(400).entity(Map.of("error", "Tidak ada plotting aktif untuk keluarga ini.")).build();
+        }
+
+        // Kumpulkan bus yang perlu dikurangi kursinya
+        Map<Long, Kendaraan> busesToUpdate = new java.util.LinkedHashMap<>();
+        for (PendaftaranMudik p : keluarga) {
+            if (p.kendaraan != null) {
+                busesToUpdate.put(p.kendaraan.id, p.kendaraan);
+            }
+        }
+
+        for (PendaftaranMudik p : keluarga) {
+            if (p.kendaraan != null) {
+                p.kendaraan.terisi = Math.max(0, (p.kendaraan.terisi != null ? p.kendaraan.terisi : 0) - 1);
+            }
+            p.kendaraan = null;
+            p.persist();
+        }
+
+        for (Kendaraan bus : busesToUpdate.values()) {
+            bus.persist();
+        }
+
+        return Response.ok(Map.of(
+                "status", "BERHASIL",
+                "pesan", "Plotting " + keluarga.size() + " peserta berhasil dibatalkan. Kursi bus dikembalikan."
+        )).build();
     }
 
     // =================================================================

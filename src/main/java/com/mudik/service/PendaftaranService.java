@@ -403,10 +403,10 @@ public class PendaftaranService {
         long totalKeluarga = countQ.getSingleResult();
         int totalPages = totalKeluarga == 0 ? 1 : (int) Math.ceil((double) totalKeluarga / limit);
 
-        // Ambil user_id halaman ini
+        // FIX 3: Ambil user_id halaman ini — diurutkan berdasarkan pendaftaran TERBARU dulu (MAX created_at)
         var userQ = PendaftaranMudik.getEntityManager().createQuery(
-                "SELECT DISTINCT p.user.user_id FROM PendaftaranMudik p WHERE " + where
-                        + " ORDER BY p.user.user_id DESC", Long.class);
+                "SELECT p.user.user_id FROM PendaftaranMudik p WHERE " + where
+                        + " GROUP BY p.user.user_id ORDER BY MAX(p.created_at) DESC", Long.class);
         params.forEach(userQ::setParameter);
         List<Long> userIds = userQ.setFirstResult((page - 1) * limit).setMaxResults(limit).getResultList();
 
@@ -450,6 +450,8 @@ public class PendaftaranService {
             m.put("no_hp_target", hp);
             m.put("foto_bukti", (p.foto_identitas_path != null && !p.foto_identitas_path.isBlank())
                     ? "/uploads/" + new File(p.foto_identitas_path).getName() : null);
+            // FIX 3: Tambah tanggal pendaftaran
+            m.put("created_at", p.created_at != null ? p.created_at.toString() : null);
             mapped.add(m);
         }
 

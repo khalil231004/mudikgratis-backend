@@ -51,8 +51,9 @@ public class ManifestResource {
         Kendaraan bus = Kendaraan.findById(kendaraanId);
         if (bus == null) return Response.status(404).entity(Map.of("error", "Bus tidak ditemukan")).build();
 
+        // FIX 5: Hanya tampilkan yang TERVERIFIKASI/ SIAP BERANGKAT
         List<PendaftaranMudik> list = PendaftaranMudik.list(
-                "kendaraan.id = ?1 ORDER BY nama_peserta ASC", kendaraanId);
+                "kendaraan.id = ?1 AND status_pendaftaran = 'TERVERIFIKASI/ SIAP BERANGKAT' ORDER BY nama_peserta ASC", kendaraanId);
 
         Map<String, Object> result = buildManifestData(bus.rute, bus, list);
         return Response.ok(result).build();
