@@ -8,6 +8,7 @@ import com.mudik.service.PendaftaranService;
 import com.mudik.service.WhatsAppService;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
+import jakarta.annotation.security.RolesAllowed;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
@@ -23,6 +24,7 @@ import java.util.stream.Collectors;
 @Path("/api/admin")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
+@RolesAllowed({"ADMIN", "PETUGAS"}) // FIX KEAMANAN: Hanya ADMIN/PETUGAS boleh akses
 public class AdminResource {
 
     @Inject ExcelService excelService;

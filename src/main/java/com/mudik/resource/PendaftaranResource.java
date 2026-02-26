@@ -4,10 +4,12 @@ import com.mudik.model.PendaftaranMudik;
 import com.mudik.model.Rute;
 import com.mudik.model.User;
 import com.mudik.service.PendaftaranService;
+import io.quarkus.security.Authenticated;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.jboss.resteasy.reactive.RestForm;
 import org.jboss.resteasy.reactive.multipart.FileUpload;
 
@@ -16,11 +18,23 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * FIX KEAMANAN KRITIS:
+ * - Hapus @HeaderParam("userId") yang tidak aman (siapapun bisa palsukan header)
+ * - Gunakan @Inject JsonWebToken untuk ambil userId dari JWT yang terverifikasi
+ * - Tambah @Authenticated di class level
+ */
 @Path("/api/pendaftaran")
+@Authenticated // FIX: Wajib token untuk semua endpoint pendaftaran
+@Produces(MediaType.APPLICATION_JSON)
 public class PendaftaranResource {
 
     @Inject
     PendaftaranService pendaftaranService;
+
+    // FIX: Inject JWT untuk baca claim user_id yang aman
+    @Inject
+    JsonWebToken jwt;
 
     // ================================================================
     // DTO: Form multipart pendaftaran
@@ -37,30 +51,29 @@ public class PendaftaranResource {
     }
 
     // ================================================================
-    // HELPER: Resolve userId dari header (bisa berupa angka atau UUID)
+    // HELPER: Ambil userId dari JWT (aman, tidak bisa dipalsukan)
     // ================================================================
-    private Long resolveUserId(String idStr) {
-        if (idStr == null || idStr.isEmpty() || "undefined".equals(idStr)) {
-            throw new WebApplicationException("User ID tidak valid/kosong", 400);
-        }
-
-        // Header duplikat kadang dikirim sebagai "30, 30" — ambil nilai pertama
-        String cleaned = idStr.split(",")[0].trim().replace("\"", "");
-
-        if (cleaned.isEmpty() || "undefined".equals(cleaned)) {
-            throw new WebApplicationException("User ID tidak valid/kosong", 400);
-        }
-
-        try {
-            return Long.parseLong(cleaned);
-        } catch (NumberFormatException e) {
-            // Bukan angka → coba cari sebagai UUID pendaftaran
-            PendaftaranMudik p = PendaftaranMudik.find("uuid", cleaned).firstResult();
-            if (p != null && p.user != null) {
-                return p.user.user_id;
+    private Long getUserIdFromJwt() {
+        // Coba baca claim "id_user" yang di-set saat sign JWT di AuthResource
+        Object idClaim = jwt.getClaim("id_user");
+        if (idClaim != null) {
+            try {
+                // JWT claim bisa bertipe Integer atau Long tergantung serializer
+                if (idClaim instanceof Number) {
+                    return ((Number) idClaim).longValue();
+                }
+                return Long.parseLong(idClaim.toString());
+            } catch (NumberFormatException e) {
+                // fall through
             }
-            throw new WebApplicationException("Data User tidak ditemukan untuk UUID: " + cleaned, 404);
         }
+        // Fallback: cari user berdasarkan email (subject JWT = UPN = email)
+        String email = jwt.getSubject() != null ? jwt.getSubject() : jwt.getName();
+        User user = User.find("email", email).firstResult();
+        if (user == null) {
+            throw new WebApplicationException("User tidak ditemukan untuk token ini", 401);
+        }
+        return user.user_id;
     }
 
     // ================================================================
@@ -68,10 +81,9 @@ public class PendaftaranResource {
     // ================================================================
     @GET
     @Path("/riwayat")
-    @Produces(MediaType.APPLICATION_JSON)
-    public Response riwayatPendaftaran(@HeaderParam("userId") String userIdStr) {
+    public Response riwayatPendaftaran() {
         try {
-            Long userId = resolveUserId(userIdStr);
+            Long userId = getUserIdFromJwt();
 
             List<PendaftaranMudik> list = PendaftaranMudik.list(
                     "user.user_id = ?1 ORDER BY created_at DESC", userId);
@@ -86,7 +98,6 @@ public class PendaftaranResource {
                 map.put("nama_peserta",      p.nama_peserta != null ? p.nama_peserta : "");
                 map.put("nik_peserta",       p.nik_peserta  != null ? p.nik_peserta  : "");
                 map.put("alasan_tolak",      p.alasan_tolak != null ? p.alasan_tolak : "-");
-                // Kirim tanggal_lahir dan kategori supaya frontend bisa tampilkan dengan benar
                 map.put("tanggal_lahir",     p.tanggal_lahir != null ? p.tanggal_lahir.toString() : null);
                 map.put("kategori_penumpang",p.kategori_penumpang != null ? p.kategori_penumpang : "DEWASA");
                 map.put("jenis_kelamin",     p.jenis_kelamin != null ? p.jenis_kelamin : "");
@@ -99,10 +110,8 @@ public class PendaftaranResource {
                     map.put("tanggal_keberangkatan", "-");
                 }
 
-                map.put("nama_bus", p.kendaraan != null ? p.kendaraan.nama_armada : "Menunggu Plotting");
-                map.put("plat_nomor", p.kendaraan != null ? p.kendaraan.plat_nomor : null);
-
-                // ── FLAG: apakah admin sudah kirim link konfirmasi ke user ini
+                map.put("nama_bus",    p.kendaraan != null ? p.kendaraan.nama_armada : "Menunggu Plotting");
+                map.put("plat_nomor",  p.kendaraan != null ? p.kendaraan.plat_nomor : null);
                 map.put("link_konfirmasi_dikirim", p.link_konfirmasi_dikirim);
 
                 if (p.foto_identitas_path != null && !p.foto_identitas_path.isBlank()) {
@@ -115,6 +124,8 @@ public class PendaftaranResource {
             }
 
             return Response.ok(result).build();
+        } catch (WebApplicationException wae) {
+            throw wae;
         } catch (Exception e) {
             return Response.status(400).entity(Map.of("error", e.getMessage())).build();
         }
@@ -125,13 +136,11 @@ public class PendaftaranResource {
     // ================================================================
     @POST
     @Consumes(MediaType.MULTIPART_FORM_DATA)
-    @Produces(MediaType.APPLICATION_JSON)
     public Response daftarBatch(
-            @HeaderParam("userId") String userIdStr,
             @QueryParam("rute_id") Long ruteId,
             PendaftaranMultipartForm form) {
         try {
-            Long userId = resolveUserId(userIdStr);
+            Long userId = getUserIdFromJwt();
 
             if (ruteId == null)
                 return Response.status(400).entity(Map.of("error", "Pilih rute!")).build();
@@ -149,6 +158,8 @@ public class PendaftaranResource {
                     "status", "BERHASIL",
                     "pesan",  form.nama_peserta.size() + " peserta terdaftar!"
             )).build();
+        } catch (WebApplicationException wae) {
+            throw wae;
         } catch (Exception e) {
             return Response.status(400).entity(Map.of("error", e.getMessage())).build();
         }
@@ -156,23 +167,19 @@ public class PendaftaranResource {
 
     // ================================================================
     // 3. PUT KONFIRMASI KEHADIRAN (H-3)
+    // FIX: PathParam userId tidak perlu lagi, ambil dari JWT
     // ================================================================
     @PUT
-    @Path("/konfirmasi-kehadiran/{userId}")
-    @Produces(MediaType.APPLICATION_JSON)
+    @Path("/konfirmasi-kehadiran")
     @Consumes(MediaType.APPLICATION_JSON)
-    public Response konfirmasiKehadiran(
-            @PathParam("userId") String userIdStr,
-            Map<String, List<Long>> body) {
+    public Response konfirmasiKehadiran(Map<String, List<Long>> body) {
         try {
-            Long userId = resolveUserId(userIdStr);
+            Long userId = getUserIdFromJwt();
 
             List<Long> ids = body.get("ids_konfirmasi");
             if (ids == null)
                 return Response.status(400).entity(Map.of("error", "Data 'ids_konfirmasi' tidak ditemukan")).build();
 
-            // ── PENTING: Cek apakah admin sudah kirim link konfirmasi ke keluarga ini
-            // Konfirmasi hanya bisa dilakukan jika admin sudah mengirim link via WA H-3
             long sudahDikirim = PendaftaranMudik.count(
                     "user.user_id = ?1 AND link_konfirmasi_dikirim = true", userId);
             if (sudahDikirim == 0) {
@@ -184,6 +191,8 @@ public class PendaftaranResource {
 
             String pesan = pendaftaranService.prosesKonfirmasi(userId, ids);
             return Response.ok(Map.of("status", "BERHASIL", "message", pesan)).build();
+        } catch (WebApplicationException wae) {
+            throw wae;
         } catch (Exception e) {
             e.printStackTrace();
             return Response.status(400).entity(Map.of("error", e.getMessage())).build();
@@ -192,17 +201,16 @@ public class PendaftaranResource {
 
     // ================================================================
     // 4. PUT PERBAIKI DATA (user edit setelah ditolak)
+    // FIX: Hapus @HeaderParam("userId"), ambil dari JWT
     // ================================================================
     @PUT
     @Path("/perbaiki-data/{pendaftaranId}")
     @Consumes(MediaType.MULTIPART_FORM_DATA)
-    @Produces(MediaType.APPLICATION_JSON)
     public Response perbaikiData(
             @PathParam("pendaftaranId") Long pendaftaranId,
-            @HeaderParam("userId") String userIdStr,
             PendaftaranMultipartForm form) {
         try {
-            Long userId = resolveUserId(userIdStr);
+            Long userId = getUserIdFromJwt();
 
             pendaftaranService.editPendaftaran(userId, pendaftaranId, form);
 
@@ -210,6 +218,8 @@ public class PendaftaranResource {
                     "status", "BERHASIL",
                     "pesan",  "Data berhasil diperbaiki. Menunggu Verifikasi."
             )).build();
+        } catch (WebApplicationException wae) {
+            throw wae;
         } catch (Exception e) {
             return Response.status(400).entity(Map.of("error", e.getMessage())).build();
         }

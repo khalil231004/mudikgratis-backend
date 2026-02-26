@@ -1,3 +1,6 @@
+# =============================================================
+# DATABASE
+# =============================================================
 quarkus.datasource.db-kind=postgresql
 quarkus.datasource.username=${DB_USER}
 quarkus.datasource.password=${DB_PASSWORD}
@@ -5,17 +8,27 @@ quarkus.datasource.jdbc.url=${DB_URL}
 quarkus.hibernate-orm.database.generation=update
 
 
-mp.jwt.verify.publickey.location=NONE
-mp.jwt.verify.issuer=https://dishubosrm.acehprov.go.id
-smallrye.jwt.sign.key=r7NmAExOMIt9qJiz0Hbyhf5f/lhUFcO8K4HhtSaqBHQ=
-smallrye.jwt.verify.key=${smallrye.jwt.sign.key}
+# =============================================================
+# JWT — HMAC HS256 (symmetric key)
+# FIX: Gunakan env variable untuk secret — JANGAN hardcode!
+# Di server: export JWT_SECRET_KEY=<base64-random-panjang>
+# =============================================================
+mp.jwt.verify.issuer=${APP_BASE_URL:https://dishubosrm.acehprov.go.id}
+smallrye.jwt.sign.key=${JWT_SECRET_KEY:r7NmAExOMIt9qJiz0Hbyhf5f/lhUFcO8K4HhtSaqBHQ=}
+smallrye.jwt.verify.key=${JWT_SECRET_KEY:r7NmAExOMIt9qJiz0Hbyhf5f/lhUFcO8K4HhtSaqBHQ=}
 smallrye.jwt.verify.algorithm=HS256
 
 
-app.base.url=https://dishubosrm.acehprov.go.id
-app.frontend.url=https://seulamat.dishubaceh.com
+# =============================================================
+# APP URL — satu sumber kebenaran, dipakai JWT issuer & email
+# =============================================================
+app.base.url=${APP_BASE_URL:https://dishubosrm.acehprov.go.id}
+app.frontend.url=${APP_FRONTEND_URL:https://seulamat.dishubaceh.com}
 
-# --- EMAIL ---
+
+# =============================================================
+# EMAIL
+# =============================================================
 quarkus.mailer.host=smtp.gmail.com
 quarkus.mailer.port=465
 quarkus.mailer.ssl=true
@@ -24,36 +37,62 @@ quarkus.mailer.from=${MAIL_USERNAME}
 quarkus.mailer.username=${MAIL_USERNAME}
 quarkus.mailer.password=${MAIL_PASSWORD}
 
+
+# =============================================================
+# HTTP SERVER
+# =============================================================
 quarkus.http.host=0.0.0.0
 quarkus.http.body.uploads-directory=/opt/mudik-v2/uploads
 quarkus.http.limits.max-body-size=20M
 quarkus.http.read-timeout=60s
 
+
 # =============================================================
-# CORS ? WAJIB ADA, PAKAI BUILT-IN QUARKUS (BUKAN CUSTOM FILTER)
+# CORS — SATU PENDEKATAN: Quarkus built-in SAJA
+#
+# CorsFilter.java hanya bertugas menangkap OPTIONS preflight
+# sebelum auth layer (karena @PreMatching). Quarkus built-in
+# yang mengatur header CORS pada semua response normal.
+#
+# PENTING: Dua domain didaftarkan dengan pemisah koma.
+# Quarkus akan reflect origin yang cocok (dynamic matching).
 # =============================================================
-# Quarkus punya CORS handler di level Vert.x (lebih dalam dari JAX-RS filter).
-# Ini yang paling reliable dan tidak bisa di-bypass oleh auth layer.
-# Custom CorsFilter.java tetap ada sebagai backup tapi yang utama ini.
 quarkus.http.cors=true
-quarkus.http.cors.origins=https://seulamat.dishubaceh.com
+quarkus.http.cors.origins=https://seulamat.dishubaceh.com,https://dishubosrm.acehprov.go.id
 quarkus.http.cors.methods=GET,POST,PUT,DELETE,OPTIONS,HEAD,PATCH
 quarkus.http.cors.headers=origin,content-type,accept,authorization,userid,x-requested-with
 quarkus.http.cors.exposed-headers=content-disposition,content-type
 quarkus.http.cors.access-control-allow-credentials=true
 quarkus.http.cors.access-control-max-age=24H
 
+
 # =============================================================
 # AUTH PERMISSIONS
+# proactive=false: auth check hanya dilakukan jika endpoint
+# memiliki anotasi security (@RolesAllowed / @Authenticated).
 # =============================================================
-# proactive=false: Quarkus tidak paksa cek token di semua endpoint
 quarkus.http.auth.proactive=false
 
-# Semua /api/* boleh diakses (validasi userId dilakukan manual di kode Java)
-quarkus.http.auth.permission.public.paths=/api/*
+# --- PUBLIC: Akses bebas tanpa token ---
+# FIX: Tambahkan /api/public/* dan /api/feedback/publik/bintang5
+quarkus.http.auth.permission.public.paths=\
+  /api/auth/*,\
+  /api/rute,\
+  /api/portal/status,\
+  /api/feedback/publik,\
+  /api/feedback/publik/bintang5,\
+  /api/feedback/stats,\
+  /api/peta/*,\
+  /api/public/*
 quarkus.http.auth.permission.public.policy=permit
 
-# /api/user/* wajib token karena UserResource pakai @Authenticated
+# --- AUTHENTICATED: /api/user/* wajib token ---
 quarkus.http.auth.permission.authenticated.paths=/api/user/*
 quarkus.http.auth.permission.authenticated.policy=authenticated
 
+# --- OPTIONS PREFLIGHT: Semua /api/* harus bebas auth ---
+# Satu rule saja sudah cukup cover semuanya.
+# Browser kirim OPTIONS tanpa Authorization header, jadi wajib permit.
+quarkus.http.auth.permission.preflight.paths=/api/*
+quarkus.http.auth.permission.preflight.methods=OPTIONS
+quarkus.http.auth.permission.preflight.policy=permit

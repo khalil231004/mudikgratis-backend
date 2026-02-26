@@ -11,31 +11,37 @@ import java.io.IOException;
 import java.util.Set;
 
 /**
- * CorsFilter — backup filter untuk memastikan CORS header selalu ada.
- *
- * CATATAN: CORS utama ditangani oleh Quarkus built-in di application.properties
- * (quarkus.http.cors=true). Filter ini sebagai backup untuk edge case dan error responses.
+ * CorsFilter — backup filter untuk memastikan CORS header selalu ada,
+ * termasuk pada response error (4xx/5xx) yang tidak dicover Quarkus built-in.
  *
  * @PreMatching memastikan OPTIONS preflight ditangkap SEBELUM auth check,
  * sehingga browser tidak kena 401 saat kirim preflight tanpa Authorization header.
  *
- * PENTING: Filter ini juga menangkap error response (4xx/5xx) yang mungkin tidak
- * mendapat CORS header dari Quarkus built-in jika terjadi error sebelum routing selesai.
+ * FIX: Tambah wildcard localhost untuk development, dan pastikan semua
+ * error response (termasuk 401/403 dari JWT layer) tetap punya CORS header.
  */
 @Provider
 @PreMatching
 public class CorsFilter implements ContainerRequestFilter, ContainerResponseFilter {
 
-    // Daftar origin yang diizinkan
+    // Daftar origin yang diizinkan (production + development)
     private static final Set<String> ALLOWED_ORIGINS = Set.of(
             "https://seulamat.dishubaceh.com",
-            "https://dishubosrm.acehprov.go.id"
+            "https://dishubosrm.acehprov.go.id",
+            // Dev origins — hapus di production jika perlu
+            "http://localhost:3000",
+            "http://localhost:5173",
+            "http://localhost:8080"
     );
 
     private static final String ALLOW_HDR = "origin,content-type,accept,authorization,userid,x-requested-with";
     private static final String ALLOW_MTD = "GET,POST,PUT,DELETE,OPTIONS,HEAD,PATCH";
+    private static final String DEFAULT_ORIGIN = "https://seulamat.dishubaceh.com";
 
-    // Tangkap OPTIONS preflight sebelum auth layer
+    /**
+     * Tangkap OPTIONS preflight SEBELUM auth layer.
+     * Tanpa ini: browser kirim preflight → Quarkus auth layer tolak dengan 401 → CORS error.
+     */
     @Override
     public void filter(ContainerRequestContext req) throws IOException {
         if ("OPTIONS".equalsIgnoreCase(req.getMethod())) {
@@ -54,13 +60,17 @@ public class CorsFilter implements ContainerRequestFilter, ContainerResponseFilt
         }
     }
 
-    // Tambahkan CORS headers ke SEMUA response (termasuk 4xx/5xx)
-    // putSingle dipakai agar tidak duplikasi header jika Quarkus built-in sudah menambahkannya
+    /**
+     * Tambahkan CORS headers ke SEMUA response termasuk 4xx/5xx.
+     * putSingle dipakai agar tidak duplikasi jika Quarkus built-in sudah menambahkan.
+     *
+     * PENTING: Jika response 401 tidak punya CORS header, browser tampilkan
+     * "CORS error" padahal sebenarnya itu 401 auth error — ini membingungkan developer!
+     */
     @Override
     public void filter(ContainerRequestContext req, ContainerResponseContext res) throws IOException {
         String origin = req.getHeaderString("Origin");
         String allowOrigin = resolveAllowOrigin(origin);
-        // Selalu override untuk memastikan header ada, termasuk saat error
         res.getHeaders().putSingle("Access-Control-Allow-Origin",      allowOrigin);
         res.getHeaders().putSingle("Vary",                             "Origin");
         res.getHeaders().putSingle("Access-Control-Allow-Headers",     ALLOW_HDR);
@@ -70,13 +80,12 @@ public class CorsFilter implements ContainerRequestFilter, ContainerResponseFilt
 
     /**
      * Kembalikan origin yang dikirim browser jika ada di whitelist,
-     * fallback ke origin utama jika tidak dikenal.
+     * fallback ke origin utama jika tidak dikenal atau null.
      */
     private String resolveAllowOrigin(String requestOrigin) {
         if (requestOrigin != null && ALLOWED_ORIGINS.contains(requestOrigin)) {
             return requestOrigin;
         }
-        // Default ke frontend utama
-        return "https://seulamat.dishubaceh.com";
+        return DEFAULT_ORIGIN;
     }
 }
