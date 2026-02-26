@@ -245,10 +245,7 @@ public class PendaftaranService {
         if (p == null) return;
         if (!"DITOLAK".equals(p.status_pendaftaran) && !"DIBATALKAN".equals(p.status_pendaftaran)) {
             p.status_pendaftaran = "DITOLAK";
-            if (p.rute != null) {
-                Rute r = Rute.findById(p.rute.rute_id, LockModeType.PESSIMISTIC_WRITE);
-                if (r.kuota_terisi != null && r.kuota_terisi > 0) r.kuota_terisi -= 1;
-            }
+            // FIX POIN 1: TIDAK kurangi kuota — slot masih dipegang oleh anggota PENDING
             p.persist();
         }
     }
@@ -269,9 +266,10 @@ public class PendaftaranService {
             if (sudahFinal && !"MENUNGGU VERIFIKASI".equalsIgnoreCase(statusBaru)) continue;
 
             if ("DITOLAK".equalsIgnoreCase(statusBaru)) {
-                boolean wasActive = !"DITOLAK".equals(statusLama) && !"DIBATALKAN".equals(statusLama) && !"PENDING".equals(statusLama);
-                if (wasActive && ruteLocked.kuota_terisi != null && ruteLocked.kuota_terisi > 0)
-                    ruteLocked.kuota_terisi -= 1;
+                // FIX POIN 1: DITOLAK TIDAK mengurangi kuota rute.
+                // Alasan: anggota lain yang jadi PENDING masih "memegang" slot mereka.
+                // Kuota baru dikembalikan ke rute HANYA saat seluruh keluarga DIBATALKAN.
+                // Yang perlu dilakukan hanya set alasan tolak.
                 p.alasan_tolak = (alasan != null && !alasan.isBlank()) ? alasan : "Ditolak oleh admin";
 
             } else if ("DIBATALKAN".equals(statusBaru)) {
@@ -297,9 +295,13 @@ public class PendaftaranService {
 
             } else if ("MENUNGGU VERIFIKASI".equals(statusBaru)) {
                 if (sudahFinal || "PENDING".equals(statusLama)) {
-                    if (ruteLocked.getSisaKuota() <= 0) throw new Exception("Kuota sudah penuh!");
                     if (ruteLocked.kuota_terisi == null) ruteLocked.kuota_terisi = 0;
-                    if (sudahFinal) ruteLocked.kuota_terisi += 1;
+                    // Hanya tambah kuota jika sebelumnya DIBATALKAN (yang memang sudah mengurangi kuota)
+                    // DITOLAK tidak pernah mengurangi kuota, jadi tidak perlu ditambah balik
+                    if ("DIBATALKAN".equals(statusLama)) {
+                        if (ruteLocked.getSisaKuota() <= 0) throw new Exception("Kuota sudah penuh!");
+                        ruteLocked.kuota_terisi += 1;
+                    }
                 }
                 p.alasan_tolak = null;
                 // Reset link_konfirmasi_dikirim agar tombol tambah user aktif kembali
@@ -349,19 +351,19 @@ public class PendaftaranService {
             boolean isRejected = idsDitolak.contains(p.pendaftaran_id);
 
             if (isRejected) {
-                boolean wasActive = !"DITOLAK".equals(statusLama) && !"DIBATALKAN".equals(statusLama) && !"PENDING".equals(statusLama);
-                if (wasActive && !"BAYI".equalsIgnoreCase(p.kategori_penumpang)
-                        && ruteLocked.kuota_terisi != null && ruteLocked.kuota_terisi > 0) {
-                    ruteLocked.kuota_terisi -= 1;
-                }
+                // FIX POIN 1: DITOLAK tidak mengurangi kuota.
+                // Anggota PENDING masih memegang slot mereka di rute.
                 p.status_pendaftaran = "DITOLAK";
                 p.alasan_tolak = alasan;
                 p.persist();
                 countDitolak++;
             } else if ("DITOLAK".equals(statusLama) || "DIBATALKAN".equals(statusLama)) {
-                if (ruteLocked.getSisaKuota() <= 0) throw new Exception("Gagal ACC. Kuota Penuh!");
-                if (ruteLocked.kuota_terisi == null) ruteLocked.kuota_terisi = 0;
-                ruteLocked.kuota_terisi += 1;
+                // Restore: hanya tambah kuota jika sebelumnya DIBATALKAN (DITOLAK tidak pernah kurangi)
+                if ("DIBATALKAN".equals(statusLama)) {
+                    if (ruteLocked.getSisaKuota() <= 0) throw new Exception("Gagal ACC. Kuota Penuh!");
+                    if (ruteLocked.kuota_terisi == null) ruteLocked.kuota_terisi = 0;
+                    ruteLocked.kuota_terisi += 1;
+                }
                 p.status_pendaftaran = "MENUNGGU VERIFIKASI";
                 p.alasan_tolak = null;
                 p.persist();

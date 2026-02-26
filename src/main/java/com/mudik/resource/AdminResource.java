@@ -155,17 +155,18 @@ public class AdminResource {
             if ("MENUNGGU VERIFIKASI".equals(statusBaru) &&
                     ("DITOLAK".equals(statusLama) || "DIBATALKAN".equals(statusLama) || "PENDING".equals(statusLama))) {
 
-                // Hanya kembalikan kuota jika sebelumnya DITOLAK/DIBATALKAN (PENDING tidak mengurangi kuota)
-                if ("DITOLAK".equals(statusLama) || "DIBATALKAN".equals(statusLama)) {
+                // FIX POIN 1: Hanya kembalikan kuota jika sebelumnya DIBATALKAN.
+                // DITOLAK tidak pernah mengurangi kuota, jadi tidak perlu ditambah balik.
+                // PENDING juga tidak mengurangi kuota.
+                if ("DIBATALKAN".equals(statusLama)) {
                     if (p.rute.getSisaKuota() <= 0) {
                         return Response.status(400).entity(Map.of("error", "Kuota Rute Penuh, tidak bisa reset data!")).build();
                     }
                     p.rute.kuota_terisi = (p.rute.kuota_terisi == null ? 0 : p.rute.kuota_terisi) + 1;
                 }
                 p.alasan_tolak = null;
-                // FIX 4: Reset flag konfirmasi agar tombol tambah user aktif kembali
                 p.link_konfirmasi_dikirim = false;
-                // FIX 5: Kembalikan kursi bus jika peserta sudah di-plotting
+                // Kembalikan kursi bus jika peserta sudah di-plotting
                 if (p.kendaraan != null) {
                     p.kendaraan.terisi = Math.max(0, (p.kendaraan.terisi != null ? p.kendaraan.terisi : 0) - 1);
                     p.kendaraan.persist();
@@ -192,14 +193,13 @@ public class AdminResource {
                 }
             }
 
-            // ── TOLAK INDIVIDUAL: kurangi kuota + set anggota lain ke PENDING ──
+            // ── TOLAK INDIVIDUAL: set anggota lain ke PENDING, TIDAK kurangi kuota ──
             else if ("DITOLAK".equals(statusBaru) &&
                     !"DITOLAK".equals(statusLama) && !"DIBATALKAN".equals(statusLama)) {
 
-                boolean wasActive = !"PENDING".equals(statusLama);
-                if (wasActive && !"BAYI".equalsIgnoreCase(p.kategori_penumpang) && p.rute.kuota_terisi > 0) {
-                    p.rute.kuota_terisi -= 1;
-                }
+                // FIX POIN 1: TIDAK kurangi kuota saat DITOLAK.
+                // Slot rute masih tereservasi untuk keluarga (anggota lain jadi PENDING).
+                // Kuota baru dikembalikan saat seluruh keluarga benar-benar DIBATALKAN.
                 p.alasan_tolak = body.getOrDefault("alasan", "Ditolak oleh admin");
 
                 // Set anggota keluarga lain yang masih aktif ke PENDING
