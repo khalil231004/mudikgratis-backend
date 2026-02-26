@@ -85,18 +85,19 @@ public class AdminResource {
     @GET
     @Path("/pendaftar/paginated")
     public Response getPendaftarPaginated(
-            @QueryParam("page")   Integer page,
-            @QueryParam("limit")  Integer limit,
-            @QueryParam("search") String search,
-            @QueryParam("rute")   String rute,
-            @QueryParam("status") String status) {
+            @QueryParam("page")    Integer page,
+            @QueryParam("limit")   Integer limit,
+            @QueryParam("search")  String search,
+            @QueryParam("rute")    String rute,
+            @QueryParam("rute_id") Long ruteId,
+            @QueryParam("status")  String status) {
         try {
             int pageNum  = (page  != null && page  > 0) ? page  : 1;
             int limitNum = (limit != null && limit > 0) ? limit : 30;
 
             // Service sudah mapping ke DTO - tinggal return
             Map<String, Object> result = pendaftaranService
-                    .getPendaftarAdminPaginated(pageNum, limitNum, search, rute, status);
+                    .getPendaftarAdminPaginated(pageNum, limitNum, search, rute, ruteId, status);
 
             return Response.ok(result).build();
         } catch (Exception e) {
@@ -162,6 +163,14 @@ public class AdminResource {
                     p.rute.kuota_terisi = (p.rute.kuota_terisi == null ? 0 : p.rute.kuota_terisi) + 1;
                 }
                 p.alasan_tolak = null;
+                // FIX 4: Reset flag konfirmasi agar tombol tambah user aktif kembali
+                p.link_konfirmasi_dikirim = false;
+                // FIX 5: Kembalikan kursi bus jika peserta sudah di-plotting
+                if (p.kendaraan != null) {
+                    p.kendaraan.terisi = Math.max(0, (p.kendaraan.terisi != null ? p.kendaraan.terisi : 0) - 1);
+                    p.kendaraan.persist();
+                    p.kendaraan = null;
+                }
 
                 // Cek apakah setelah reset ini masih ada yang ditolak di keluarga
                 // Jika tidak → pulihkan semua PENDING ke MENUNGGU VERIFIKASI
@@ -175,6 +184,7 @@ public class AdminResource {
                         for (PendaftaranMudik anggota : keluarga) {
                             if ("PENDING".equals(anggota.status_pendaftaran)) {
                                 anggota.status_pendaftaran = "MENUNGGU VERIFIKASI";
+                                anggota.link_konfirmasi_dikirim = false;
                                 anggota.persist();
                             }
                         }

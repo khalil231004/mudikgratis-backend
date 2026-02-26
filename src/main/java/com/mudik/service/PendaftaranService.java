@@ -280,6 +280,14 @@ public class PendaftaranService {
                     if (sudahFinal) ruteLocked.kuota_terisi += 1;
                 }
                 p.alasan_tolak = null;
+                // FIX 4: Reset link_konfirmasi_dikirim agar tombol tambah user aktif kembali
+                p.link_konfirmasi_dikirim = false;
+                // FIX 5: Kembalikan kursi bus jika peserta sudah di-plotting
+                if (p.kendaraan != null) {
+                    p.kendaraan.terisi = Math.max(0, (p.kendaraan.terisi != null ? p.kendaraan.terisi : 0) - 1);
+                    p.kendaraan.persist();
+                    p.kendaraan = null;
+                }
             }
 
             p.status_pendaftaran = statusBaru;
@@ -371,7 +379,7 @@ public class PendaftaranService {
     // =================================================================
     // 8. ADMIN: GET PENDAFTAR PAGINATED
     // =================================================================
-    public Map<String, Object> getPendaftarAdminPaginated(int page, int limit, String search, String rute, String status) {
+    public Map<String, Object> getPendaftarAdminPaginated(int page, int limit, String search, String rute, Long ruteId, String status) {
 
         StringBuilder where = new StringBuilder("p.user IS NOT NULL");
         Map<String, Object> params = new HashMap<>();
@@ -382,7 +390,11 @@ public class PendaftaranService {
                     + " OR LOWER(p.user.nama_lengkap) LIKE :search)");
             params.put("search", "%" + search.trim().toLowerCase() + "%");
         }
-        if (rute != null && !rute.trim().isEmpty()) {
+        // FIX 7: Filter by rute_id (lebih spesifik — membedakan jadwal berbeda di rute yang sama)
+        if (ruteId != null) {
+            where.append(" AND p.rute.rute_id = :ruteId");
+            params.put("ruteId", ruteId);
+        } else if (rute != null && !rute.trim().isEmpty()) {
             where.append(" AND p.rute.tujuan = :rute");
             params.put("rute", rute.trim());
         }
