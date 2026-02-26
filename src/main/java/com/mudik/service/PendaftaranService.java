@@ -273,6 +273,28 @@ public class PendaftaranService {
                 if (wasActive && ruteLocked.kuota_terisi != null && ruteLocked.kuota_terisi > 0)
                     ruteLocked.kuota_terisi -= 1;
                 p.alasan_tolak = (alasan != null && !alasan.isBlank()) ? alasan : "Ditolak oleh admin";
+
+            } else if ("DIBATALKAN".equals(statusBaru)) {
+                // FIX FATAL: Kembalikan kuota rute saat keluarga dibatalkan via aksi cepat
+                // Hanya kurangi untuk peserta yang statusnya masih aktif (bukan sudah DITOLAK/DIBATALKAN)
+                // dan bukan BAYI (bayi tidak mengurangi kuota)
+                boolean wasActive = !"DITOLAK".equals(statusLama)
+                        && !"DIBATALKAN".equals(statusLama)
+                        && !"PENDING".equals(statusLama);
+                if (wasActive && !"BAYI".equalsIgnoreCase(p.kategori_penumpang)) {
+                    if (ruteLocked.kuota_terisi != null && ruteLocked.kuota_terisi > 0) {
+                        ruteLocked.kuota_terisi -= 1;
+                    }
+                }
+                // Kembalikan kursi bus jika sudah di-plotting
+                if (p.kendaraan != null) {
+                    p.kendaraan.terisi = Math.max(0, (p.kendaraan.terisi != null ? p.kendaraan.terisi : 0) - 1);
+                    p.kendaraan.persist();
+                    p.kendaraan = null;
+                }
+                // Reset flag konfirmasi
+                p.link_konfirmasi_dikirim = false;
+
             } else if ("MENUNGGU VERIFIKASI".equals(statusBaru)) {
                 if (sudahFinal || "PENDING".equals(statusLama)) {
                     if (ruteLocked.getSisaKuota() <= 0) throw new Exception("Kuota sudah penuh!");
@@ -280,9 +302,9 @@ public class PendaftaranService {
                     if (sudahFinal) ruteLocked.kuota_terisi += 1;
                 }
                 p.alasan_tolak = null;
-                // FIX 4: Reset link_konfirmasi_dikirim agar tombol tambah user aktif kembali
+                // Reset link_konfirmasi_dikirim agar tombol tambah user aktif kembali
                 p.link_konfirmasi_dikirim = false;
-                // FIX 5: Kembalikan kursi bus jika peserta sudah di-plotting
+                // Kembalikan kursi bus jika peserta sudah di-plotting
                 if (p.kendaraan != null) {
                     p.kendaraan.terisi = Math.max(0, (p.kendaraan.terisi != null ? p.kendaraan.terisi : 0) - 1);
                     p.kendaraan.persist();

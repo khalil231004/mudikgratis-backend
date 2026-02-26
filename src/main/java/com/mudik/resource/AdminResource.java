@@ -216,13 +216,20 @@ public class AdminResource {
                 }
             }
 
-            // ── BATAL: kembalikan kuota ──
+            // ── BATAL: kembalikan kuota rute + kursi bus ──
             else if ("DIBATALKAN".equals(statusBaru) &&
                     !"DITOLAK".equals(statusLama) && !"DIBATALKAN".equals(statusLama)) {
 
                 if (!"BAYI".equalsIgnoreCase(p.kategori_penumpang) && p.rute.kuota_terisi > 0) {
                     p.rute.kuota_terisi -= 1;
                 }
+                // Kembalikan kursi bus jika sudah di-plotting
+                if (p.kendaraan != null && p.kendaraan.terisi != null && p.kendaraan.terisi > 0) {
+                    p.kendaraan.terisi = Math.max(0, p.kendaraan.terisi - 1);
+                    p.kendaraan.persist();
+                    p.kendaraan = null;
+                }
+                p.link_konfirmasi_dikirim = false;
             }
 
             p.status_pendaftaran = statusBaru;
