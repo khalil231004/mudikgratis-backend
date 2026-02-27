@@ -90,13 +90,16 @@ public class AdminResource {
             @QueryParam("search")  String search,
             @QueryParam("rute")    String rute,
             @QueryParam("rute_id") Long ruteId,
-            @QueryParam("status")  String status) {
+            @QueryParam("status")  String status,
+            @QueryParam("sort")    String sort) {
         try {
             int pageNum  = (page  != null && page  > 0) ? page  : 1;
             int limitNum = (limit != null && limit > 0) ? limit : 30;
+            // FIX 5: Default ASC, bisa di-override jadi DESC dari frontend
+            String sortOrder = "DESC".equalsIgnoreCase(sort) ? "DESC" : "ASC";
 
             Map<String, Object> result = pendaftaranService
-                    .getPendaftarAdminPaginated(pageNum, limitNum, search, rute, ruteId, status);
+                    .getPendaftarAdminPaginated(pageNum, limitNum, search, rute, ruteId, status, sortOrder);
 
             return Response.ok(result).build();
         } catch (Exception e) {

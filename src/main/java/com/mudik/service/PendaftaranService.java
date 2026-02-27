@@ -389,7 +389,7 @@ public class PendaftaranService {
     // 8. ADMIN: GET PENDAFTAR PAGINATED
     // ✅ UBAH: Urutan dari terlama (ASC) — Keluarga K duluan, R belakangan
     // =================================================================
-    public Map<String, Object> getPendaftarAdminPaginated(int page, int limit, String search, String rute, Long ruteId, String status) {
+    public Map<String, Object> getPendaftarAdminPaginated(int page, int limit, String search, String rute, Long ruteId, String status, String sortOrder) {
 
         StringBuilder where = new StringBuilder("p.user IS NOT NULL");
         Map<String, Object> params = new HashMap<>();
@@ -424,11 +424,11 @@ public class PendaftaranService {
         long totalKeluarga = countQ.getSingleResult();
         int totalPages = totalKeluarga == 0 ? 1 : (int) Math.ceil((double) totalKeluarga / limit);
 
-        // ✅ UBAH: MIN(created_at) ASC — keluarga yang daftar PALING LAMA tampil paling atas
-        // Sebelumnya: MAX(p.created_at) DESC (terbaru duluan)
+        // FIX 5: Urutan dinamis berdasarkan sortOrder (ASC = terlama, DESC = terbaru)
+        String orderDir = "DESC".equalsIgnoreCase(sortOrder) ? "DESC" : "ASC";
         var userQ = PendaftaranMudik.getEntityManager().createQuery(
                 "SELECT p.user.user_id FROM PendaftaranMudik p WHERE " + where
-                        + " GROUP BY p.user.user_id ORDER BY MIN(p.created_at) ASC", Long.class);
+                        + " GROUP BY p.user.user_id ORDER BY MIN(p.created_at) " + orderDir, Long.class);
         params.forEach(userQ::setParameter);
         List<Long> userIds = userQ.setFirstResult((page - 1) * limit).setMaxResults(limit).getResultList();
 
@@ -441,9 +441,8 @@ public class PendaftaranService {
                             + " LEFT JOIN FETCH p.rute"
                             + " LEFT JOIN FETCH p.kendaraan"
                             + " WHERE p.user.user_id IN :ids"
-                            // ✅ UBAH: ASC — anggota keluarga juga diurutkan terlama dulu
-                            // Sebelumnya: p.user.user_id DESC, p.created_at DESC
-                            + " ORDER BY p.user.user_id ASC, p.created_at ASC",
+                            // FIX 5: Urutan anggota keluarga juga ikut sortOrder
+                            + " ORDER BY p.user.user_id ASC, p.created_at " + orderDir,
                     PendaftaranMudik.class);
             dataQ.setParameter("ids", userIds);
             rows = dataQ.getResultList();
