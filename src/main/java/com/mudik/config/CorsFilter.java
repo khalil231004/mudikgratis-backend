@@ -25,7 +25,7 @@ import java.io.IOException;
 @PreMatching
 public class CorsFilter implements ContainerRequestFilter, ContainerResponseFilter {
 
-    private static final String ORIGIN    = "https://seulamat.dishubaceh.com";
+    private static final String ORIGIN    = "https://seulamat.dishubaceh.com,https://mudik.dishubaceh.com,http://localhost:5173";
     private static final String ALLOW_HDR = "origin,content-type,accept,authorization,userid,x-requested-with";
     private static final String ALLOW_MTD = "GET,POST,PUT,DELETE,OPTIONS,HEAD,PATCH";
 
