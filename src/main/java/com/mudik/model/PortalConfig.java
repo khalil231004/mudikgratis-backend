@@ -60,6 +60,27 @@ public class PortalConfig extends PanacheEntityBase {
     @Column(length = 1000)
     public String pesan_dashboard = "Program Mudik Gratis Aceh 2026 telah selesai. Terima kasih telah berpartisipasi!";
 
+    // ── COUNTDOWN PEMBUKAAN ──────────────────────────────────────────
+    /**
+     * Jika true → hero di Home.tsx menampilkan countdown + menyembunyikan tombol daftar & login.
+     * Jika false → hero normal (tombol daftar & login muncul).
+     */
+    @Column(columnDefinition = "BOOLEAN DEFAULT FALSE")
+    public Boolean countdown_aktif = false;
+
+    /**
+     * Tanggal/waktu target pembukaan dalam format ISO-8601, misal: "2026-03-03T09:30:00"
+     * Digunakan oleh countdown timer di Home.tsx.
+     */
+    @Column(length = 50)
+    public String countdown_target;
+
+    /**
+     * Label teks yang tampil di bawah countdown, misal: "PENDAFTARAN DIBUKA 3 MAR · 09.30 WIB"
+     */
+    @Column(length = 300)
+    public String countdown_label = "PENDAFTARAN AKAN DIBUKA SEGERA";
+
     // ── METADATA ─────────────────────────────────────────────────────
     /** Waktu terakhir konfigurasi diubah oleh admin */
     public LocalDateTime updated_at;

@@ -50,6 +50,9 @@ public class PortalResource {
         result.put("pesan_mudik_tutup",     cfg.pesan_mudik_tutup);
         result.put("pesan_home",            cfg.pesan_home);
         result.put("pesan_dashboard",       cfg.pesan_dashboard);
+        result.put("countdown_aktif",       cfg.countdown_aktif);
+        result.put("countdown_target",      cfg.countdown_target);
+        result.put("countdown_label",       cfg.countdown_label);
         result.put("updated_at",            cfg.updated_at);
         result.put("updated_by",            cfg.updated_by);
 
@@ -136,6 +139,15 @@ public class PortalResource {
 
             if (body.containsKey("pesan_dashboard") && body.get("pesan_dashboard") != null)
                 cfg.pesan_dashboard = body.get("pesan_dashboard").toString();
+
+            if (body.containsKey("countdown_aktif"))
+                cfg.countdown_aktif = Boolean.parseBoolean(body.get("countdown_aktif").toString());
+
+            if (body.containsKey("countdown_target"))
+                cfg.countdown_target = body.get("countdown_target") != null ? body.get("countdown_target").toString() : null;
+
+            if (body.containsKey("countdown_label") && body.get("countdown_label") != null)
+                cfg.countdown_label = body.get("countdown_label").toString();
 
             cfg.updated_at = LocalDateTime.now();
             cfg.updated_by = body.getOrDefault("admin", "Admin").toString();
