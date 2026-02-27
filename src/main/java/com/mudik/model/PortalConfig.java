@@ -33,6 +33,15 @@ public class PortalConfig extends PanacheEntityBase {
     @Column(length = 500)
     public String pesan_register_tutup = "Pendaftaran akun baru saat ini ditutup. Pantau informasi resmi di website Dishub Aceh.";
 
+    // ── PORTAL LOGIN ─────────────────────────────────────────────────
+    /** Jika false → endpoint /api/auth/login menolak login user biasa */
+    @Column(columnDefinition = "BOOLEAN DEFAULT TRUE")
+    public Boolean portal_login_open = true;
+
+    /** Pesan yang ditampilkan ke user saat portal login ditutup */
+    @Column(length = 500)
+    public String pesan_login_tutup = "Login peserta saat ini tidak tersedia. Silakan coba lagi nanti.";
+
     // ── PORTAL 2: PENDAFTARAN MUDIK ──────────────────────────────────
     /** Jika false → endpoint /api/pendaftaran menolak pendaftaran mudik baru */
     @Column(columnDefinition = "BOOLEAN DEFAULT TRUE")

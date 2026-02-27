@@ -44,9 +44,11 @@ public class PortalResource {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("sesi_aktif",            cfg.sesi_aktif);
         result.put("portal_register_open",  cfg.portal_register_open);
+        result.put("portal_login_open",     cfg.portal_login_open);
         result.put("portal_mudik_open",     cfg.portal_mudik_open);
         result.put("pesan_sesi_berakhir",   cfg.pesan_sesi_berakhir);
         result.put("pesan_register_tutup",  cfg.pesan_register_tutup);
+        result.put("pesan_login_tutup",     cfg.pesan_login_tutup);
         result.put("pesan_mudik_tutup",     cfg.pesan_mudik_tutup);
         result.put("pesan_home",            cfg.pesan_home);
         result.put("pesan_dashboard",       cfg.pesan_dashboard);
@@ -72,6 +74,17 @@ public class PortalResource {
     @Transactional
     public Response toggleRegister(Map<String, Object> body) {
         return updatePortal(body, "register");
+    }
+
+    /**
+     * PUT /api/portal/login
+     * Body: { "open": true/false, "pesan": "...", "admin": "nama admin" }
+     */
+    @PUT
+    @Path("/login")
+    @Transactional
+    public Response toggleLogin(Map<String, Object> body) {
+        return updatePortal(body, "login");
     }
 
     /**
@@ -122,11 +135,17 @@ public class PortalResource {
             if (body.containsKey("portal_register_open"))
                 cfg.portal_register_open = Boolean.parseBoolean(body.get("portal_register_open").toString());
 
+            if (body.containsKey("portal_login_open"))
+                cfg.portal_login_open = Boolean.parseBoolean(body.get("portal_login_open").toString());
+
             if (body.containsKey("portal_mudik_open"))
                 cfg.portal_mudik_open = Boolean.parseBoolean(body.get("portal_mudik_open").toString());
 
             if (body.containsKey("pesan_register_tutup") && body.get("pesan_register_tutup") != null)
                 cfg.pesan_register_tutup = body.get("pesan_register_tutup").toString();
+
+            if (body.containsKey("pesan_login_tutup") && body.get("pesan_login_tutup") != null)
+                cfg.pesan_login_tutup = body.get("pesan_login_tutup").toString();
 
             if (body.containsKey("pesan_mudik_tutup") && body.get("pesan_mudik_tutup") != null)
                 cfg.pesan_mudik_tutup = body.get("pesan_mudik_tutup").toString();
@@ -183,6 +202,11 @@ public class PortalResource {
                     cfg.portal_register_open = open;
                     if (pesan != null) cfg.pesan_register_tutup = pesan;
                     label = "Portal Pendaftaran Akun";
+                }
+                case "login" -> {
+                    cfg.portal_login_open = open;
+                    if (pesan != null) cfg.pesan_login_tutup = pesan;
+                    label = "Portal Login Peserta";
                 }
                 case "mudik" -> {
                     cfg.portal_mudik_open = open;
