@@ -334,43 +334,45 @@ public class PendaftaranService {
 
         for (PendaftaranMudik p : keluarga) {
             String statusLama = p.status_pendaftaran;
+            // FIX: Skip peserta yang sudah DIBATALKAN — tidak perlu diproses
+            if ("DIBATALKAN".equals(statusLama)) continue;
+
             boolean isRejected = idsDitolak.contains(p.pendaftaran_id);
 
             if (isRejected) {
-                // FIX POIN 1: DITOLAK tidak mengurangi kuota.
+                // DITOLAK tidak mengurangi kuota
                 p.status_pendaftaran = "DITOLAK";
                 p.alasan_tolak = alasan;
                 p.persist();
                 countDitolak++;
-            } else if ("DITOLAK".equals(statusLama) || "DIBATALKAN".equals(statusLama)) {
-                // Restore: hanya tambah kuota jika sebelumnya DIBATALKAN
-                if ("DIBATALKAN".equals(statusLama)) {
-                    if (ruteLocked.getSisaKuota() <= 0) throw new Exception("Gagal ACC. Kuota Penuh!");
-                    if (ruteLocked.kuota_terisi == null) ruteLocked.kuota_terisi = 0;
-                    ruteLocked.kuota_terisi += 1;
-                }
+            } else if ("DITOLAK".equals(statusLama)) {
+                // Restore dari DITOLAK ke MENUNGGU (tidak tambah kuota, DITOLAK tidak pernah kurangi kuota)
                 p.status_pendaftaran = "MENUNGGU VERIFIKASI";
                 p.alasan_tolak = null;
                 p.persist();
             }
+            // Untuk status lain (MENUNGGU, DITERIMA H-3, PENDING) yang tidak di-reject → biarkan dulu, akan diproses di bawah
         }
 
         ruteLocked.persist();
 
         if (countDitolak > 0) {
+            // Ada yang ditolak → anggota lain (bukan DITOLAK/DIBATALKAN) → PENDING
             for (PendaftaranMudik p : keluarga) {
                 String status = p.status_pendaftaran;
-                if (!idsDitolak.contains(p.pendaftaran_id)
-                        && !"DITOLAK".equals(status) && !"DIBATALKAN".equals(status)) {
+                if ("DIBATALKAN".equals(status)) continue; // Skip DIBATALKAN
+                if (!idsDitolak.contains(p.pendaftaran_id) && !"DITOLAK".equals(status)) {
                     p.status_pendaftaran = "PENDING";
                     p.alasan_tolak = null;
                     p.persist();
                 }
             }
         } else {
+            // Semua OK → DITERIMA H-3 (kecuali yang sudah DIBATALKAN)
             for (PendaftaranMudik p : keluarga) {
                 String status = p.status_pendaftaran;
-                if (!"DITOLAK".equals(status) && !"DIBATALKAN".equals(status)) {
+                if ("DIBATALKAN".equals(status)) continue; // Skip DIBATALKAN
+                if (!"DITOLAK".equals(status)) {
                     p.status_pendaftaran = "DITERIMA H-3";
                     p.alasan_tolak = null;
                     p.persist();
