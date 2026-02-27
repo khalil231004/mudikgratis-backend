@@ -191,8 +191,6 @@ public class PendaftaranService {
         if (form.nik_peserta  != null) p.nik_peserta  = form.nik_peserta.get(0);
 
         // ── FIX KRITIS: kategori umur ─────────────────────────────────
-        // Ambil tanggal lahir: baru dari form (kalau diisi) atau lama dari DB
-        // Lalu recalculate kategori via hitungKategori() — konsisten di semua flow
         LocalDate tglFinal = p.tanggal_lahir;
         if (form.tanggal_lahir != null && !form.tanggal_lahir.isEmpty()
                 && form.tanggal_lahir.get(0) != null && !form.tanggal_lahir.get(0).isBlank()) {
@@ -267,15 +265,9 @@ public class PendaftaranService {
 
             if ("DITOLAK".equalsIgnoreCase(statusBaru)) {
                 // FIX POIN 1: DITOLAK TIDAK mengurangi kuota rute.
-                // Alasan: anggota lain yang jadi PENDING masih "memegang" slot mereka.
-                // Kuota baru dikembalikan ke rute HANYA saat seluruh keluarga DIBATALKAN.
-                // Yang perlu dilakukan hanya set alasan tolak.
                 p.alasan_tolak = (alasan != null && !alasan.isBlank()) ? alasan : "Ditolak oleh admin";
 
             } else if ("DIBATALKAN".equals(statusBaru)) {
-                // FIX FATAL: Kembalikan kuota rute saat keluarga dibatalkan via aksi cepat
-                // Hanya kurangi untuk peserta yang statusnya masih aktif (bukan sudah DITOLAK/DIBATALKAN)
-                // dan bukan BAYI (bayi tidak mengurangi kuota)
                 boolean wasActive = !"DITOLAK".equals(statusLama)
                         && !"DIBATALKAN".equals(statusLama)
                         && !"PENDING".equals(statusLama);
@@ -284,29 +276,23 @@ public class PendaftaranService {
                         ruteLocked.kuota_terisi -= 1;
                     }
                 }
-                // Kembalikan kursi bus jika sudah di-plotting
                 if (p.kendaraan != null) {
                     p.kendaraan.terisi = Math.max(0, (p.kendaraan.terisi != null ? p.kendaraan.terisi : 0) - 1);
                     p.kendaraan.persist();
                     p.kendaraan = null;
                 }
-                // Reset flag konfirmasi
                 p.link_konfirmasi_dikirim = false;
 
             } else if ("MENUNGGU VERIFIKASI".equals(statusBaru)) {
                 if (sudahFinal || "PENDING".equals(statusLama)) {
                     if (ruteLocked.kuota_terisi == null) ruteLocked.kuota_terisi = 0;
-                    // Hanya tambah kuota jika sebelumnya DIBATALKAN (yang memang sudah mengurangi kuota)
-                    // DITOLAK tidak pernah mengurangi kuota, jadi tidak perlu ditambah balik
                     if ("DIBATALKAN".equals(statusLama)) {
                         if (ruteLocked.getSisaKuota() <= 0) throw new Exception("Kuota sudah penuh!");
                         ruteLocked.kuota_terisi += 1;
                     }
                 }
                 p.alasan_tolak = null;
-                // Reset link_konfirmasi_dikirim agar tombol tambah user aktif kembali
                 p.link_konfirmasi_dikirim = false;
-                // Kembalikan kursi bus jika peserta sudah di-plotting
                 if (p.kendaraan != null) {
                     p.kendaraan.terisi = Math.max(0, (p.kendaraan.terisi != null ? p.kendaraan.terisi : 0) - 1);
                     p.kendaraan.persist();
@@ -352,13 +338,12 @@ public class PendaftaranService {
 
             if (isRejected) {
                 // FIX POIN 1: DITOLAK tidak mengurangi kuota.
-                // Anggota PENDING masih memegang slot mereka di rute.
                 p.status_pendaftaran = "DITOLAK";
                 p.alasan_tolak = alasan;
                 p.persist();
                 countDitolak++;
             } else if ("DITOLAK".equals(statusLama) || "DIBATALKAN".equals(statusLama)) {
-                // Restore: hanya tambah kuota jika sebelumnya DIBATALKAN (DITOLAK tidak pernah kurangi)
+                // Restore: hanya tambah kuota jika sebelumnya DIBATALKAN
                 if ("DIBATALKAN".equals(statusLama)) {
                     if (ruteLocked.getSisaKuota() <= 0) throw new Exception("Gagal ACC. Kuota Penuh!");
                     if (ruteLocked.kuota_terisi == null) ruteLocked.kuota_terisi = 0;
@@ -402,6 +387,7 @@ public class PendaftaranService {
 
     // =================================================================
     // 8. ADMIN: GET PENDAFTAR PAGINATED
+    // ✅ UBAH: Urutan dari terlama (ASC) — Keluarga K duluan, R belakangan
     // =================================================================
     public Map<String, Object> getPendaftarAdminPaginated(int page, int limit, String search, String rute, Long ruteId, String status) {
 
@@ -414,7 +400,6 @@ public class PendaftaranService {
                     + " OR LOWER(p.user.nama_lengkap) LIKE :search)");
             params.put("search", "%" + search.trim().toLowerCase() + "%");
         }
-        // FIX 7: Filter by rute_id (lebih spesifik — membedakan jadwal berbeda di rute yang sama)
         if (ruteId != null) {
             where.append(" AND p.rute.rute_id = :ruteId");
             params.put("ruteId", ruteId);
@@ -439,10 +424,11 @@ public class PendaftaranService {
         long totalKeluarga = countQ.getSingleResult();
         int totalPages = totalKeluarga == 0 ? 1 : (int) Math.ceil((double) totalKeluarga / limit);
 
-        // FIX 3: Ambil user_id halaman ini — diurutkan berdasarkan pendaftaran TERBARU dulu (MAX created_at)
+        // ✅ UBAH: MIN(created_at) ASC — keluarga yang daftar PALING LAMA tampil paling atas
+        // Sebelumnya: MAX(p.created_at) DESC (terbaru duluan)
         var userQ = PendaftaranMudik.getEntityManager().createQuery(
                 "SELECT p.user.user_id FROM PendaftaranMudik p WHERE " + where
-                        + " GROUP BY p.user.user_id ORDER BY MAX(p.created_at) DESC", Long.class);
+                        + " GROUP BY p.user.user_id ORDER BY MIN(p.created_at) ASC", Long.class);
         params.forEach(userQ::setParameter);
         List<Long> userIds = userQ.setFirstResult((page - 1) * limit).setMaxResults(limit).getResultList();
 
@@ -455,7 +441,9 @@ public class PendaftaranService {
                             + " LEFT JOIN FETCH p.rute"
                             + " LEFT JOIN FETCH p.kendaraan"
                             + " WHERE p.user.user_id IN :ids"
-                            + " ORDER BY p.user.user_id DESC, p.created_at DESC",
+                            // ✅ UBAH: ASC — anggota keluarga juga diurutkan terlama dulu
+                            // Sebelumnya: p.user.user_id DESC, p.created_at DESC
+                            + " ORDER BY p.user.user_id ASC, p.created_at ASC",
                     PendaftaranMudik.class);
             dataQ.setParameter("ids", userIds);
             rows = dataQ.getResultList();
@@ -486,7 +474,6 @@ public class PendaftaranService {
             m.put("no_hp_target", hp);
             m.put("foto_bukti", (p.foto_identitas_path != null && !p.foto_identitas_path.isBlank())
                     ? "/uploads/" + new File(p.foto_identitas_path).getName() : null);
-            // FIX 3: Tambah tanggal pendaftaran
             m.put("created_at", p.created_at != null ? p.created_at.toString() : null);
             mapped.add(m);
         }

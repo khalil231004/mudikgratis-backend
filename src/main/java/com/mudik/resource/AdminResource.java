@@ -37,15 +37,15 @@ public class AdminResource {
     public Response getAllPendaftar(@QueryParam("rute_id") Long ruteId) {
         List<PendaftaranMudik> list;
         if (ruteId != null) {
-            list = PendaftaranMudik.list("rute.rute_id = ?1 ORDER BY created_at DESC", ruteId);
+            // ✅ UBAH: ASC — data terlama (pendaftar pertama) tampil paling atas
+            list = PendaftaranMudik.list("rute.rute_id = ?1 ORDER BY created_at ASC", ruteId);
         } else {
-            list = PendaftaranMudik.list("ORDER BY created_at DESC");
+            list = PendaftaranMudik.list("ORDER BY created_at ASC");
         }
 
         List<Map<String, Object>> result = list.stream().map(p -> {
             Map<String, Object> map = new HashMap<>();
             map.put("id", p.pendaftaran_id);
-            // 🔥 FIX NO 6: Kirim UUID ke Frontend (Pastikan DB sudah di-update)
             map.put("uuid", (p.uuid != null) ? p.uuid : "");
             map.put("nama_peserta", p.nama_peserta);
             map.put("nik_peserta", p.nik_peserta);
@@ -78,9 +78,9 @@ public class AdminResource {
         return Response.ok(result).build();
     }
 
-
     // =================================================================
     // 1b. GET PENDAFTAR PAGINATED (UNTUK TABEL ADMIN)
+    // ✅ Signature method SAMA persis dengan PendaftaranService (tidak ada param tambahan)
     // =================================================================
     @GET
     @Path("/pendaftar/paginated")
@@ -95,7 +95,6 @@ public class AdminResource {
             int pageNum  = (page  != null && page  > 0) ? page  : 1;
             int limitNum = (limit != null && limit > 0) ? limit : 30;
 
-            // Service sudah mapping ke DTO - tinggal return
             Map<String, Object> result = pendaftaranService
                     .getPendaftarAdminPaginated(pageNum, limitNum, search, rute, ruteId, status);
 
@@ -126,7 +125,6 @@ public class AdminResource {
             }
             // B. KASUS RESET / TERIMA (Pakai Update Status Keluarga)
             else {
-                // Method ini di Service sudah handle Reset Kuota (Menunggu) dan Terima (H-3)
                 linkWa = pendaftaranService.updateStatusKeluarga(userId, aksi, null);
             }
 
@@ -166,15 +164,12 @@ public class AdminResource {
                 }
                 p.alasan_tolak = null;
                 p.link_konfirmasi_dikirim = false;
-                // Kembalikan kursi bus jika peserta sudah di-plotting
                 if (p.kendaraan != null) {
                     p.kendaraan.terisi = Math.max(0, (p.kendaraan.terisi != null ? p.kendaraan.terisi : 0) - 1);
                     p.kendaraan.persist();
                     p.kendaraan = null;
                 }
 
-                // Cek apakah setelah reset ini masih ada yang ditolak di keluarga
-                // Jika tidak → pulihkan semua PENDING ke MENUNGGU VERIFIKASI
                 if (userId != null) {
                     long masihDitolak = PendaftaranMudik.count(
                             "user.user_id = ?1 AND pendaftaran_id != ?2 AND status_pendaftaran = 'DITOLAK'",
@@ -198,11 +193,8 @@ public class AdminResource {
                     !"DITOLAK".equals(statusLama) && !"DIBATALKAN".equals(statusLama)) {
 
                 // FIX POIN 1: TIDAK kurangi kuota saat DITOLAK.
-                // Slot rute masih tereservasi untuk keluarga (anggota lain jadi PENDING).
-                // Kuota baru dikembalikan saat seluruh keluarga benar-benar DIBATALKAN.
                 p.alasan_tolak = body.getOrDefault("alasan", "Ditolak oleh admin");
 
-                // Set anggota keluarga lain yang masih aktif ke PENDING
                 if (userId != null) {
                     List<PendaftaranMudik> keluarga = PendaftaranMudik.list("user.user_id = ?1", userId);
                     for (PendaftaranMudik anggota : keluarga) {
@@ -223,7 +215,6 @@ public class AdminResource {
                 if (!"BAYI".equalsIgnoreCase(p.kategori_penumpang) && p.rute.kuota_terisi > 0) {
                     p.rute.kuota_terisi -= 1;
                 }
-                // Kembalikan kursi bus jika sudah di-plotting
                 if (p.kendaraan != null && p.kendaraan.terisi != null && p.kendaraan.terisi > 0) {
                     p.kendaraan.terisi = Math.max(0, p.kendaraan.terisi - 1);
                     p.kendaraan.persist();
@@ -248,11 +239,9 @@ public class AdminResource {
     @Path("/assign-bus")
     @Transactional
     public Response assignBus(@QueryParam("user_id") Long userId, @QueryParam("kendaraan_id") Long kendaraanId) {
-        // 1. Cek Bus Baru
         Kendaraan busBaru = Kendaraan.findById(kendaraanId);
         if (busBaru == null) return Response.status(404).entity(Map.of("error", "Bus tidak ditemukan")).build();
 
-        // 2. Cek Status Wajib TERVERIFIKASI/ SIAP BERANGKAT
         List<PendaftaranMudik> keluarga = PendaftaranMudik.list("user.user_id = ?1 AND status_pendaftaran = 'TERVERIFIKASI/ SIAP BERANGKAT'", userId);
 
         if (keluarga.isEmpty()) {
@@ -263,7 +252,6 @@ public class AdminResource {
             return Response.status(400).entity(Map.of("error", "Data tidak ditemukan atau belum SIAP.")).build();
         }
 
-        // 2b. Validasi Rute: Bus harus sesuai rute peserta
         PendaftaranMudik firstPeserta = keluarga.get(0);
         if (firstPeserta.rute != null && busBaru.rute != null) {
             if (!firstPeserta.rute.rute_id.equals(busBaru.rute.rute_id)) {
@@ -275,21 +263,16 @@ public class AdminResource {
             }
         }
 
-        // 3. Cek Kapasitas
         if (busBaru.terisi + keluarga.size() > busBaru.kapasitas_total) {
             return Response.status(400).entity(Map.of("error", "Bus Penuh! Sisa: " + (busBaru.kapasitas_total - busBaru.terisi))).build();
         }
 
-        // 4. Proses Plotting / Pindah Bus
-        // FIX 1: Cegah duplikat — skip penumpang yang sudah ada di bus yang sama
         int addedCount = 0;
         for (PendaftaranMudik p : keluarga) {
             if (p.kendaraan != null && p.kendaraan.id.equals(busBaru.id)) {
-                // Sudah di bus yang sama, skip tanpa tambah kuota lagi
                 continue;
             }
             if (p.kendaraan != null && !p.kendaraan.id.equals(busBaru.id)) {
-                // Pindah bus: kurangi kursi bus lama
                 p.kendaraan.terisi = Math.max(0, (p.kendaraan.terisi != null ? p.kendaraan.terisi : 0) - 1);
                 p.kendaraan.persist();
             }
@@ -320,7 +303,6 @@ public class AdminResource {
             return Response.status(400).entity(Map.of("error", "Tidak ada plotting aktif untuk keluarga ini.")).build();
         }
 
-        // Kumpulkan bus yang perlu dikurangi kursinya
         Map<Long, Kendaraan> busesToUpdate = new java.util.LinkedHashMap<>();
         for (PendaftaranMudik p : keluarga) {
             if (p.kendaraan != null) {
@@ -363,7 +345,6 @@ public class AdminResource {
                 )).build();
             }
 
-            // Set flag link_konfirmasi_dikirim = true untuk semua anggota keluarga
             PendaftaranMudik wakil = keluarga.get(0);
             String targetHp = (wakil.no_hp_peserta != null && wakil.no_hp_peserta.length() > 5)
                     ? wakil.no_hp_peserta
@@ -374,7 +355,6 @@ public class AdminResource {
                 p.persist();
             }
 
-            // Generate link WA konfirmasi
             String linkWa = waService.generateLink(targetHp, "DITERIMA(H-3)", wakil, null);
 
             return Response.ok(Map.of(
@@ -404,7 +384,6 @@ public class AdminResource {
         long sisaKuotaGlobal = 0;
         for(Rute r : rutes) sisaKuotaGlobal += r.getSisaKuota();
 
-        // Total armada bus
         long totalArmada = Kendaraan.count();
 
         List<Map<String, Object>> statsRute = rutes.stream().map(rute -> {
@@ -416,7 +395,6 @@ public class AdminResource {
             return map;
         }).collect(Collectors.toList());
 
-        // Statistik feedback/kepuasan
         long totalFeedback = com.mudik.model.Feedback.count("disetujui = true");
         Double avgRating = null;
         try {
@@ -425,7 +403,6 @@ public class AdminResource {
                     .getSingleResult();
         } catch (Exception ignored) {}
 
-        // 🔥 FIX: Pakai HashMap untuk respon lebih dari 10 key
         Map<String, Object> responseData = new HashMap<>();
         responseData.put("total_masuk", totalPendaftar);
         responseData.put("total_diterima", totalDiterima);
@@ -443,7 +420,7 @@ public class AdminResource {
     }
 
     // =================================================================
-    // 6. EXPORT EXCEL nya
+    // 6. EXPORT EXCEL
     // =================================================================
     @GET
     @Path("/export")
@@ -451,7 +428,6 @@ public class AdminResource {
     public Response exportExcel(@QueryParam("rute_id") Long ruteId, @QueryParam("hanya_plotting") Boolean hanyaPlotting) {
         try {
             List<PendaftaranMudik> list;
-            // POIN 1: Jika hanya_plotting=true, filter hanya yang sudah di-assign ke bus
             if (Boolean.TRUE.equals(hanyaPlotting)) {
                 if (ruteId != null) {
                     list = PendaftaranMudik.list(
@@ -476,7 +452,7 @@ public class AdminResource {
     }
 
     // =================================================================
-    // 6b. KONFIRMASI MANUAL OLEH ADMIN (POIN 6 - TOMBOL DARURAT)
+    // 6b. KONFIRMASI MANUAL OLEH ADMIN
     // =================================================================
     @PUT
     @Path("/konfirmasi-manual/{userId}")
@@ -507,8 +483,7 @@ public class AdminResource {
                         dikonfirmasi++;
                     }
                 } else {
-                    // Batalkan
-                    if (!isSiap) { // jangan batalkan yang sudah SIAP jika tidak diminta
+                    if (!isSiap) {
                         if (p.rute != null && p.rute.kuota_terisi != null && p.rute.kuota_terisi > 0) {
                             p.rute.kuota_terisi -= 1;
                             p.rute.persist();
@@ -532,7 +507,7 @@ public class AdminResource {
     }
 
     // =================================================================
-    // 6c. BATALKAN PER ORANG (POIN 9 - Batalkan individual tanpa ubah status lain)
+    // 6c. BATALKAN PER ORANG (individual tanpa ubah status lain)
     // =================================================================
     @PUT
     @Path("/batalkan-peserta/{id}")
@@ -542,12 +517,10 @@ public class AdminResource {
             PendaftaranMudik p = PendaftaranMudik.findById(id);
             if (p == null) return Response.status(404).entity(Map.of("error", "Peserta tidak ditemukan")).build();
 
-            // Jika sudah DIBATALKAN, jangan ubah apapun
             if ("DIBATALKAN".equals(p.status_pendaftaran)) {
                 return Response.status(400).entity(Map.of("error", "Peserta sudah dibatalkan")).build();
             }
 
-            // Kembalikan kuota rute (kecuali BAYI dan yang sudah DITOLAK)
             if (!"BAYI".equalsIgnoreCase(p.kategori_penumpang) &&
                     !"DITOLAK".equals(p.status_pendaftaran) &&
                     p.rute != null && p.rute.kuota_terisi != null && p.rute.kuota_terisi > 0) {
@@ -555,14 +528,12 @@ public class AdminResource {
                 p.rute.persist();
             }
 
-            // Kembalikan kursi bus jika sudah plotting
             if (p.kendaraan != null && p.kendaraan.terisi != null && p.kendaraan.terisi > 0) {
                 p.kendaraan.terisi -= 1;
                 p.kendaraan.persist();
                 p.kendaraan = null;
             }
 
-            // HANYA ubah status peserta ini, tidak sentuh anggota keluarga lain
             p.status_pendaftaran = "DIBATALKAN";
             p.persist();
 
@@ -575,7 +546,9 @@ public class AdminResource {
         }
     }
 
+    // =================================================================
     // 7. VERIFIKASI CUSTOM (CHECKBOX)
+    // =================================================================
     @PUT
     @Path("/verifikasi-custom/{userId}")
     @Transactional
@@ -588,10 +561,8 @@ public class AdminResource {
 
             List<Long> rejectedIds = rawList.stream().map(Integer::longValue).collect(Collectors.toList());
 
-            // 🔥 INI PENTING: Tangkap Link WA dari Service
             String linkWa = pendaftaranService.verifikasiCustom(userId, rejectedIds, alasan);
 
-            // 🔥 DAN MASUKKAN KE SINI (Biar Frontend bisa baca)
             return Response.ok(Map.of(
                     "status", "BERHASIL",
                     "pesan", "Data berhasil diproses.",
@@ -605,7 +576,7 @@ public class AdminResource {
     }
 
     // =================================================================
-    // FIX 8: TAMBAH PENUMPANG OLEH ADMIN (tanpa batasan akun user)
+    // 8. TAMBAH PENUMPANG OLEH ADMIN (tanpa batasan akun user)
     // =================================================================
     @POST
     @Path("/tambah-penumpang")
@@ -631,7 +602,6 @@ public class AdminResource {
             if (rute == null) return Response.status(404).entity(Map.of("error", "Rute tidak ditemukan")).build();
             if (rute.getSisaKuota() <= 0) return Response.status(400).entity(Map.of("error", "Kuota rute penuh!")).build();
 
-            // Cek duplikat NIK
             long cekNik = com.mudik.model.PendaftaranMudik.count("nik_peserta = ?1 AND status_pendaftaran NOT IN ('DIBATALKAN', 'DITOLAK')", nikPeserta.trim());
             if (cekNik > 0) return Response.status(400).entity(Map.of("error", "NIK sudah terdaftar: " + nikPeserta)).build();
 
@@ -655,13 +625,11 @@ public class AdminResource {
                 } catch (Exception e2) { p.kategori_penumpang = "DEWASA"; }
             } else { p.kategori_penumpang = "DEWASA"; }
 
-            // Assign ke user akun jika ada
             if (userAkunId != null) {
                 com.mudik.model.User user = com.mudik.model.User.findById(userAkunId);
                 if (user != null) p.user = user;
             }
 
-            // Assign bus jika ada
             if (kendaraanId != null) {
                 com.mudik.model.Kendaraan bus = com.mudik.model.Kendaraan.findById(kendaraanId);
                 if (bus != null) {
@@ -684,7 +652,7 @@ public class AdminResource {
     }
 
     // =================================================================
-    // FIX 10: NOTIFIKASI KUOTA PENUH KE SEMUA PENUMPANG RUTE
+    // 10. NOTIFIKASI KUOTA PENUH KE SEMUA PENUMPANG RUTE
     // =================================================================
     @POST
     @Path("/notif-kuota-penuh/{rute_id}")
@@ -700,7 +668,6 @@ public class AdminResource {
             List<com.mudik.model.PendaftaranMudik> penumpang = com.mudik.model.PendaftaranMudik.list(
                     "rute.rute_id = ?1 AND status_pendaftaran NOT IN ('DIBATALKAN', 'DITOLAK')", ruteId);
 
-            // Generate WA links untuk setiap penumpang (atau per keluarga)
             Set<String> hpSudahDikirim = new java.util.HashSet<>();
             List<String> links = new java.util.ArrayList<>();
 
