@@ -212,8 +212,14 @@ public class PendaftaranService {
         Rute r = Rute.findById(p.rute.rute_id, LockModeType.PESSIMISTIC_WRITE);
         if (r.getSisaKuota() <= 0) throw new Exception("Kuota Rute Penuh! Tidak bisa mengajukan ulang.");
 
+        // Cek apakah masih dalam batas waktu 1 jam
+        if (p.tolak_at != null && p.tolak_at.plusHours(1).isBefore(java.time.LocalDateTime.now())) {
+            throw new Exception("Batas waktu perbaikan 1 jam telah terlewat. Pendaftaran Anda sudah tidak dapat diperbaiki.");
+        }
+
         p.status_pendaftaran = "MENUNGGU VERIFIKASI";
         p.alasan_tolak = null;
+        p.tolak_at = null; // reset batas perbaikan
         if (r.kuota_terisi == null) r.kuota_terisi = 0;
         r.kuota_terisi += 1;
         r.persist();
@@ -266,6 +272,7 @@ public class PendaftaranService {
             if ("DITOLAK".equalsIgnoreCase(statusBaru)) {
                 // FIX POIN 1: DITOLAK TIDAK mengurangi kuota rute.
                 p.alasan_tolak = (alasan != null && !alasan.isBlank()) ? alasan : "Ditolak oleh admin";
+                p.tolak_at = java.time.LocalDateTime.now(); // batas 1 jam untuk perbaikan
 
             } else if ("DIBATALKAN".equals(statusBaru)) {
                 boolean wasActive = !"DITOLAK".equals(statusLama)
@@ -292,6 +299,7 @@ public class PendaftaranService {
                     }
                 }
                 p.alasan_tolak = null;
+                p.tolak_at = null; // reset batas perbaikan
                 p.link_konfirmasi_dikirim = false;
                 if (p.kendaraan != null) {
                     p.kendaraan.terisi = Math.max(0, (p.kendaraan.terisi != null ? p.kendaraan.terisi : 0) - 1);
@@ -343,12 +351,14 @@ public class PendaftaranService {
                 // DITOLAK tidak mengurangi kuota
                 p.status_pendaftaran = "DITOLAK";
                 p.alasan_tolak = alasan;
+                p.tolak_at = java.time.LocalDateTime.now(); // batas perbaikan 1 jam
                 p.persist();
                 countDitolak++;
             } else if ("DITOLAK".equals(statusLama)) {
                 // Restore dari DITOLAK ke MENUNGGU (tidak tambah kuota, DITOLAK tidak pernah kurangi kuota)
                 p.status_pendaftaran = "MENUNGGU VERIFIKASI";
                 p.alasan_tolak = null;
+                p.tolak_at = null; // reset batas
                 p.persist();
             }
             // Untuk status lain (MENUNGGU, DITERIMA H-3, PENDING) yang tidak di-reject → biarkan dulu, akan diproses di bawah

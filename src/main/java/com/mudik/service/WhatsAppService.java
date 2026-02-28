@@ -43,12 +43,20 @@ public class WhatsAppService {
             switch (tipe) {
                 case "TOLAK_DATA":
                     String alasanFinal = (alasan != null && !alasan.isBlank()) ? alasan : "Data belum lengkap.";
+                    // Hitung batas waktu perbaikan (1 jam dari sekarang)
+                    java.time.LocalDateTime batasWaktu = java.time.LocalDateTime.now().plusHours(1);
+                    String batasFormatted = batasWaktu.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm"));
                     pesan = "👋 *Salam Seulamat dari Dishub Aceh*\n\n" +
                             "Yth. Sdr/i *" + p.nama_peserta + "*,\n" +
                             "Mohon maaf, Verifikasi Pendaftaran Mudik Anda *BELUM LENGKAP*.\n\n" +
                             "Catatan Petugas:\n" +
                             "👉 *" + alasanFinal + "*\n\n" +
-                            "ℹ️ *Perbaikan dapat dilakukan selama kuota masih tersedia.*\n\n";
+                            "⏰ *PERHATIAN — BATAS PERBAIKAN:*\n" +
+                            "Anda memiliki waktu *1 (satu) jam* untuk melakukan perbaikan data.\n" +
+                            "Batas Perbaikan: *" + batasFormatted + " WIB*\n\n" +
+                            "Jika data tidak diperbaiki sebelum batas waktu tersebut, pendaftaran Anda akan *OTOMATIS DIBATALKAN* dan kuota Anda akan diberikan kepada peserta lain.\n\n" +
+                            "🔗 Silakan login dan perbaiki data Anda di:\n" +
+                            baseUrl + "\n\n";
                     break;
 
                 // ── Kirim link konfirmasi (hanya dipanggil via endpoint kirim-link-konfirmasi)

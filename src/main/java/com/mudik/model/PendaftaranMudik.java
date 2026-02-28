@@ -83,6 +83,12 @@ public class PendaftaranMudik extends PanacheEntityBase {
     @CreationTimestamp
     public LocalDateTime created_at;
 
+    // ── BATAS PERBAIKAN SETELAH DITOLAK ─────────────────────────────
+    // Diset saat status berubah ke DITOLAK. Jika lebih dari 1 jam dan
+    // tidak ada perbaikan, scheduler akan otomatis ubah ke DIBATALKAN.
+    @Column(name = "tolak_at")
+    public LocalDateTime tolak_at;
+
     // 🔥 GENERATE UUID & TANGGAL OTOMATIS
     @PrePersist
     public void prePersist() {
