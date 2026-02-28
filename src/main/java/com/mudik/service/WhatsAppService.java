@@ -55,8 +55,7 @@ public class WhatsAppService {
                             "Anda memiliki waktu *1 (satu) jam* untuk melakukan perbaikan data.\n" +
                             "Batas Perbaikan: *" + batasFormatted + " WIB*\n\n" +
                             "Jika data tidak diperbaiki sebelum batas waktu tersebut, pendaftaran Anda akan *OTOMATIS DIBATALKAN* dan kuota Anda akan diberikan kepada peserta lain.\n\n" +
-                            "🔗 Silakan login dan perbaiki data Anda di:\n" +
-                            baseUrl + "\n\n";
+                            "Silakan login dan perbaiki data Anda di:\n";
                     break;
 
                 // ── Kirim link konfirmasi (hanya dipanggil via endpoint kirim-link-konfirmasi)
