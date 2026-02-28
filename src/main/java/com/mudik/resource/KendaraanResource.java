@@ -1,7 +1,6 @@
 package com.mudik.resource;
 import com.mudik.model.Kendaraan;
 import com.mudik.model.Rute;
-import jakarta.persistence.LockModeType;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
@@ -16,7 +15,6 @@ import java.util.stream.Collectors;
 @Consumes(MediaType.APPLICATION_JSON)
 public class KendaraanResource {
 
-    // Helper: flatten Kendaraan + Rute jadi satu Map untuk response
     private Map<String, Object> toResponseMap(Kendaraan k) {
         Map<String, Object> map = new HashMap<>();
         map.put("id", k.id);
@@ -27,8 +25,6 @@ public class KendaraanResource {
         map.put("terisi", k.terisi);
         map.put("nama_supir", k.nama_supir);
         map.put("kontak_supir", k.kontak_supir);
-
-        // Flatten data rute supaya frontend bisa langsung baca
         if (k.rute != null) {
             map.put("rute_id", k.rute.rute_id);
             map.put("rute_asal", k.rute.asal);
@@ -40,11 +36,9 @@ public class KendaraanResource {
             map.put("rute_tujuan", null);
             map.put("waktu_berangkat", null);
         }
-
         return map;
     }
 
-    // --- 1. TAMBAH BUS BARU ---
     @POST
     @Transactional
     public Response tambahKendaraan(@QueryParam("rute_id") Long ruteId, Kendaraan kendaraan) {
@@ -58,25 +52,21 @@ public class KendaraanResource {
         kendaraan.persist();
         return Response.ok(Map.of(
                 "status", "BERHASIL",
-                "message", "Bus " + kendaraan.nama_armada + " ditambahkan. (Kuota Rute TIDAK BERUBAH)"
+                "message", "Bus " + kendaraan.nama_armada + " ditambahkan."
         )).build();
     }
 
-    // --- 2. LIHAT DAFTAR BUS (dengan data rute di-flatten) ---
     @GET
     public Response getKendaraan(@QueryParam("rute_id") Long ruteId) {
         List<Kendaraan> list = (ruteId != null)
                 ? Kendaraan.list("rute.rute_id", ruteId)
                 : Kendaraan.listAll();
-
         List<Map<String, Object>> result = list.stream()
                 .map(this::toResponseMap)
                 .collect(Collectors.toList());
-
         return Response.ok(result).build();
     }
 
-    // --- 3. HAPUS BUS ---
     @DELETE
     @Path("/{id}")
     @Transactional
@@ -84,10 +74,10 @@ public class KendaraanResource {
         Kendaraan k = Kendaraan.findById(id);
         if (k == null) return Response.status(404).entity(Map.of("error", "Bus tidak ditemukan")).build();
         k.delete();
-        return Response.ok(Map.of("status", "BERHASIL", "message", "Bus dihapus. Kuota Rute Tetap.")).build();
+        return Response.ok(Map.of("status", "BERHASIL", "message", "Bus dihapus.")).build();
     }
 
-    // --- 4. EDIT BUS ---
+    // --- EDIT BUS: gunakan native query untuk update FK rute agar dijamin tersimpan ---
     @PUT
     @Path("/{id}")
     @Transactional
@@ -105,10 +95,23 @@ public class KendaraanResource {
         if (ruteId != null) {
             Rute rute = Rute.findById(ruteId);
             if (rute == null) return Response.status(404).entity(Map.of("error", "Rute tidak ditemukan")).build();
+
+            // Native UPDATE langsung ke kolom FK — bypass Hibernate dirty tracking
+            // yang sering tidak flush perubahan relasi @ManyToOne secara reliable
+            Kendaraan.getEntityManager()
+                    .createNativeQuery("UPDATE kendaraan SET rute_id = ?1 WHERE id = ?2")
+                    .setParameter(1, ruteId)
+                    .setParameter(2, id)
+                    .executeUpdate();
+
             k.rute = rute;
         }
 
-        k.persist(); // ← WAJIB: simpan perubahan ke database
+        // Merge + flush field lain, lalu refresh agar response up-to-date
+        Kendaraan.getEntityManager().merge(k);
+        Kendaraan.getEntityManager().flush();
+        Kendaraan.getEntityManager().refresh(k);
+
         return Response.ok(toResponseMap(k)).build();
     }
 }
