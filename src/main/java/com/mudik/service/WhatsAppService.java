@@ -55,8 +55,12 @@ public class WhatsAppService {
                 case "DITERIMA(H-3)":
                     pesan = "👋 *Salam Seulamat dari Dishub Aceh*\n\n" +
                             "Yth. Sdr/i *" + p.nama_peserta + "*,\n" +
-                            "Ini adalah link konfirmasi kehadiran Anda. Mohon segera lakukan konfirmasi kehadiran melalui link berikut:\n\n";
-                    linkAction = baseUrl + "/konfirmasi/" + p.uuid;
+                            "Selamat! Pendaftaran Mudik Anda telah *DITERIMA*.\n\n" +
+                            "🚍 *PENTING: KONFIRMASI KEBERANGKATAN*\n" +
+                            "Agar kursi Anda tidak hangus, WAJIB melakukan konfirmasi kehadiran " +
+                            "yang akan *dikirimkan admin* sesuai jadwal. " +
+                            "Nanti Anda bisa konfirmasi langsung di *Dashboard* aplikasi Seulamat maupun via link WA yang akan kami kirimkan.\n\n" +
+                            "Pantau terus status tiket Anda di Dashboard aplikasi Seulamat.";
                     break;
 
                 // ── Notif diterima (tanpa link konfirmasi) — dipanggil saat admin klik Terima
