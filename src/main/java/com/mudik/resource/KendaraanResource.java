@@ -108,6 +108,7 @@ public class KendaraanResource {
             k.rute = rute;
         }
 
+        k.persist(); // ← WAJIB: simpan perubahan ke database
         return Response.ok(toResponseMap(k)).build();
     }
 }

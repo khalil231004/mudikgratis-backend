@@ -65,20 +65,18 @@ public class TiketService {
         String ruteInfo = (pendaftar.rute != null) ? pendaftar.rute.asal + " ➜ " + pendaftar.rute.tujuan : "-";
         addCell(table, "Rute Perjalanan", ruteInfo);
 
-        // 🔥 INFO BUS (PASTI ADA KARENA SUDAH DICEK DI RESOURCE) 🔥
+        // 🔥 INFO BUS — tampilkan nama armada saja, TANPA plat nomor (untuk user)
         String namaBus = (pendaftar.kendaraan != null) ? pendaftar.kendaraan.nama_armada : "ERROR";
-        String plat = (pendaftar.kendaraan != null) ? pendaftar.kendaraan.plat_nomor : "-";
 
-        // Kita bold biar kelihatan jelas
-        addCell(table, "ARMADA BUS", namaBus + "\n(" + plat + ")");
+        addCell(table, "ARMADA BUS", namaBus);
 
         addCell(table, "Alamat Domisili", pendaftar.alamat_rumah);
 
 
         document.add(table);
 
-        // 4. QR CODE
-        String qrData = kodeUnik + ";" + pendaftar.nik_peserta + ";BUS:" + plat;
+        // 4. QR CODE — plat nomor tidak dimasukkan ke QR agar tidak tampil di tiket user
+        String qrData = kodeUnik + ";" + pendaftar.nik_peserta + ";BUS:" + namaBus;
         Image qrImage = generateQRCodeImage(qrData);
         qrImage.setAlignment(Element.ALIGN_CENTER);
         qrImage.scalePercent(120f);
