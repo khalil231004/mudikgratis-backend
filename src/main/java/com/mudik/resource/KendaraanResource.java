@@ -1,4 +1,5 @@
 package com.mudik.resource;
+
 import com.mudik.model.Kendaraan;
 import com.mudik.model.Rute;
 import jakarta.transaction.Transactional;
@@ -50,10 +51,7 @@ public class KendaraanResource {
         kendaraan.rute = rute;
         kendaraan.terisi = 0;
         kendaraan.persist();
-        return Response.ok(Map.of(
-                "status", "BERHASIL",
-                "message", "Bus " + kendaraan.nama_armada + " ditambahkan."
-        )).build();
+        return Response.ok(Map.of("status", "BERHASIL", "message", "Bus " + kendaraan.nama_armada + " ditambahkan.")).build();
     }
 
     @GET
@@ -61,9 +59,7 @@ public class KendaraanResource {
         List<Kendaraan> list = (ruteId != null)
                 ? Kendaraan.list("rute.rute_id", ruteId)
                 : Kendaraan.listAll();
-        List<Map<String, Object>> result = list.stream()
-                .map(this::toResponseMap)
-                .collect(Collectors.toList());
+        List<Map<String, Object>> result = list.stream().map(this::toResponseMap).collect(Collectors.toList());
         return Response.ok(result).build();
     }
 
@@ -77,41 +73,54 @@ public class KendaraanResource {
         return Response.ok(Map.of("status", "BERHASIL", "message", "Bus dihapus.")).build();
     }
 
-    // --- EDIT BUS: gunakan native query untuk update FK rute agar dijamin tersimpan ---
     @PUT
     @Path("/{id}")
     @Transactional
     public Response editKendaraan(@PathParam("id") Long id, @QueryParam("rute_id") Long ruteId, Kendaraan body) {
-        Kendaraan k = Kendaraan.findById(id);
-        if (k == null) return Response.status(404).entity(Map.of("error", "Bus tidak ditemukan")).build();
+        // ── STEP 1: Update field biasa dulu via JPQL ──────────────────
+        // Bangun query dinamis hanya untuk field yang dikirim
+        StringBuilder jpql = new StringBuilder("UPDATE Kendaraan k SET k.id = k.id");
 
-        if (body.nama_armada != null) k.nama_armada = body.nama_armada;
-        if (body.jenis_kendaraan != null) k.jenis_kendaraan = body.jenis_kendaraan;
-        if (body.plat_nomor != null) k.plat_nomor = body.plat_nomor;
-        if (body.kapasitas_total > 0) k.kapasitas_total = body.kapasitas_total;
-        if (body.nama_supir != null) k.nama_supir = body.nama_supir;
-        if (body.kontak_supir != null) k.kontak_supir = body.kontak_supir;
+        if (body.nama_armada != null)    jpql.append(", k.nama_armada = :nama");
+        if (body.jenis_kendaraan != null) jpql.append(", k.jenis_kendaraan = :jenis");
+        if (body.plat_nomor != null)     jpql.append(", k.plat_nomor = :plat");
+        if (body.kapasitas_total > 0)    jpql.append(", k.kapasitas_total = :kap");
+        if (body.nama_supir != null)     jpql.append(", k.nama_supir = :supir");
+        if (body.kontak_supir != null)   jpql.append(", k.kontak_supir = :kontak");
 
+        // ── Update rute via FK langsung di JPQL ───────────────────────
+        Rute ruteObj = null;
         if (ruteId != null) {
-            Rute rute = Rute.findById(ruteId);
-            if (rute == null) return Response.status(404).entity(Map.of("error", "Rute tidak ditemukan")).build();
-
-            // Native UPDATE langsung ke kolom FK — bypass Hibernate dirty tracking
-            // yang sering tidak flush perubahan relasi @ManyToOne secara reliable
-            Kendaraan.getEntityManager()
-                    .createNativeQuery("UPDATE kendaraan SET rute_id = ?1 WHERE id = ?2")
-                    .setParameter(1, ruteId)
-                    .setParameter(2, id)
-                    .executeUpdate();
-
-            k.rute = rute;
+            ruteObj = Rute.findById(ruteId);
+            if (ruteObj == null)
+                return Response.status(404).entity(Map.of("error", "Rute tidak ditemukan")).build();
+            jpql.append(", k.rute = :rute");
         }
 
-        // Merge + flush field lain, lalu refresh agar response up-to-date
-        Kendaraan.getEntityManager().merge(k);
-        Kendaraan.getEntityManager().flush();
-        Kendaraan.getEntityManager().refresh(k);
+        jpql.append(" WHERE k.id = :id");
 
-        return Response.ok(toResponseMap(k)).build();
+        var query = Kendaraan.getEntityManager().createQuery(jpql.toString());
+
+        if (body.nama_armada != null)    query.setParameter("nama", body.nama_armada);
+        if (body.jenis_kendaraan != null) query.setParameter("jenis", body.jenis_kendaraan);
+        if (body.plat_nomor != null)     query.setParameter("plat", body.plat_nomor);
+        if (body.kapasitas_total > 0)    query.setParameter("kap", body.kapasitas_total);
+        if (body.nama_supir != null)     query.setParameter("supir", body.nama_supir);
+        if (body.kontak_supir != null)   query.setParameter("kontak", body.kontak_supir);
+        if (ruteObj != null)             query.setParameter("rute", ruteObj);
+
+        query.setParameter("id", id);
+        query.executeUpdate();
+
+        // ── STEP 2: Flush + load ulang entity dari DB ─────────────────
+        Kendaraan.getEntityManager().flush();
+        Kendaraan.getEntityManager().clear(); // clear cache L1 agar findById baca dari DB
+
+        Kendaraan hasil = Kendaraan.findById(id);
+        if (hasil == null) return Response.status(404).entity(Map.of("error", "Bus tidak ditemukan setelah update")).build();
+
+        System.out.println("[EDIT BUS] ID=" + id + " rute_id sekarang=" + (hasil.rute != null ? hasil.rute.rute_id : "null"));
+
+        return Response.ok(toResponseMap(hasil)).build();
     }
 }
