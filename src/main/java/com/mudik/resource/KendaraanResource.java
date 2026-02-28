@@ -2,6 +2,8 @@ package com.mudik.resource;
 
 import com.mudik.model.Kendaraan;
 import com.mudik.model.Rute;
+import jakarta.persistence.EntityManager;
+import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
@@ -15,6 +17,9 @@ import java.util.stream.Collectors;
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 public class KendaraanResource {
+
+    @Inject
+    EntityManager em;
 
     private Map<String, Object> toResponseMap(Kendaraan k) {
         Map<String, Object> map = new HashMap<>();
@@ -77,50 +82,70 @@ public class KendaraanResource {
     @Path("/{id}")
     @Transactional
     public Response editKendaraan(@PathParam("id") Long id, @QueryParam("rute_id") Long ruteId, Kendaraan body) {
-        // ── STEP 1: Update field biasa dulu via JPQL ──────────────────
-        // Bangun query dinamis hanya untuk field yang dikirim
-        StringBuilder jpql = new StringBuilder("UPDATE Kendaraan k SET k.id = k.id");
 
-        if (body.nama_armada != null)    jpql.append(", k.nama_armada = :nama");
-        if (body.jenis_kendaraan != null) jpql.append(", k.jenis_kendaraan = :jenis");
-        if (body.plat_nomor != null)     jpql.append(", k.plat_nomor = :plat");
-        if (body.kapasitas_total > 0)    jpql.append(", k.kapasitas_total = :kap");
-        if (body.nama_supir != null)     jpql.append(", k.nama_supir = :supir");
-        if (body.kontak_supir != null)   jpql.append(", k.kontak_supir = :kontak");
-
-        // ── Update rute via FK langsung di JPQL ───────────────────────
-        Rute ruteObj = null;
+        // Validasi rute dulu sebelum apapun
         if (ruteId != null) {
-            ruteObj = Rute.findById(ruteId);
-            if (ruteObj == null)
+            long ruteCount = (long) em.createNativeQuery("SELECT COUNT(*) FROM rute WHERE rute_id = ?1")
+                    .setParameter(1, ruteId)
+                    .getSingleResult();
+            if (ruteCount == 0)
                 return Response.status(404).entity(Map.of("error", "Rute tidak ditemukan")).build();
-            jpql.append(", k.rute = :rute");
         }
 
-        jpql.append(" WHERE k.id = :id");
+        // Update field biasa
+        em.createNativeQuery(
+                        "UPDATE kendaraan SET " +
+                                "nama_armada = COALESCE(?1, nama_armada), " +
+                                "jenis_kendaraan = COALESCE(?2, jenis_kendaraan), " +
+                                "plat_nomor = COALESCE(?3, plat_nomor), " +
+                                "kapasitas_total = CASE WHEN ?4 > 0 THEN ?4 ELSE kapasitas_total END, " +
+                                "nama_supir = COALESCE(?5, nama_supir), " +
+                                "kontak_supir = COALESCE(?6, kontak_supir), " +
+                                "rute_id = COALESCE(?7, rute_id) " +
+                                "WHERE id = ?8")
+                .setParameter(1, body.nama_armada)
+                .setParameter(2, body.jenis_kendaraan)
+                .setParameter(3, body.plat_nomor)
+                .setParameter(4, body.kapasitas_total)
+                .setParameter(5, body.nama_supir)
+                .setParameter(6, body.kontak_supir)
+                .setParameter(7, ruteId)   // null = tidak ganti rute, isi = ganti
+                .setParameter(8, id)
+                .executeUpdate();
 
-        var query = Kendaraan.getEntityManager().createQuery(jpql.toString());
+        // Clear L1 cache lalu baca ulang dari DB
+        em.flush();
+        em.clear();
 
-        if (body.nama_armada != null)    query.setParameter("nama", body.nama_armada);
-        if (body.jenis_kendaraan != null) query.setParameter("jenis", body.jenis_kendaraan);
-        if (body.plat_nomor != null)     query.setParameter("plat", body.plat_nomor);
-        if (body.kapasitas_total > 0)    query.setParameter("kap", body.kapasitas_total);
-        if (body.nama_supir != null)     query.setParameter("supir", body.nama_supir);
-        if (body.kontak_supir != null)   query.setParameter("kontak", body.kontak_supir);
-        if (ruteObj != null)             query.setParameter("rute", ruteObj);
+        // Baca hasil akhir langsung dari DB via native query (100% fresh)
+        List<Object[]> rows = em.createNativeQuery(
+                        "SELECT k.id, k.nama_armada, k.jenis_kendaraan, k.plat_nomor, " +
+                                "k.kapasitas_total, k.terisi, k.nama_supir, k.kontak_supir, " +
+                                "k.rute_id, r.asal, r.tujuan, r.tanggal_keberangkatan " +
+                                "FROM kendaraan k LEFT JOIN rute r ON r.rute_id = k.rute_id " +
+                                "WHERE k.id = ?1")
+                .setParameter(1, id)
+                .getResultList();
 
-        query.setParameter("id", id);
-        query.executeUpdate();
+        if (rows.isEmpty()) return Response.status(404).entity(Map.of("error", "Bus tidak ditemukan")).build();
 
-        // ── STEP 2: Flush + load ulang entity dari DB ─────────────────
-        Kendaraan.getEntityManager().flush();
-        Kendaraan.getEntityManager().clear(); // clear cache L1 agar findById baca dari DB
+        Object[] row = rows.get(0);
+        Map<String, Object> result = new HashMap<>();
+        result.put("id",              row[0]);
+        result.put("nama_armada",     row[1]);
+        result.put("jenis_kendaraan", row[2]);
+        result.put("plat_nomor",      row[3]);
+        result.put("kapasitas_total", row[4]);
+        result.put("terisi",          row[5]);
+        result.put("nama_supir",      row[6]);
+        result.put("kontak_supir",    row[7]);
+        result.put("rute_id",         row[8]);
+        result.put("rute_asal",       row[9]);
+        result.put("rute_tujuan",     row[10]);
+        result.put("waktu_berangkat", row[11]);
 
-        Kendaraan hasil = Kendaraan.findById(id);
-        if (hasil == null) return Response.status(404).entity(Map.of("error", "Bus tidak ditemukan setelah update")).build();
+        System.out.println("[EDIT BUS OK] id=" + row[0] + " rute_id=" + row[8] + " rute=" + row[10]);
 
-        System.out.println("[EDIT BUS] ID=" + id + " rute_id sekarang=" + (hasil.rute != null ? hasil.rute.rute_id : "null"));
-
-        return Response.ok(toResponseMap(hasil)).build();
+        return Response.ok(result).build();
     }
 }
