@@ -45,6 +45,14 @@ public class AuthResource {
     @ConfigProperty(name = "app.frontend.url", defaultValue = "https://seulamat.dishubaceh.com")
     String frontendUrl;
 
+    // FIX MAIL_FROM_NAME: Inject username & nama pengirim dari ENV
+    // Dipakai untuk set header "From: Nama <email>" agar tampil rapi di inbox
+    @ConfigProperty(name = "quarkus.mailer.username")
+    String mailUsername;
+
+    @ConfigProperty(name = "mail.from.name", defaultValue = "Mudik Gratis Aceh")
+    String mailFromName;
+
     // DTO Classes
     public static class RegisterRequest {
         @JsonProperty("nama_lengkap") public String nama_lengkap;
@@ -108,7 +116,9 @@ public class AuthResource {
             String link = baseUrl + "/api/auth/verify?token=" + token;
             String bodyEmail = templateEmailVerifikasi(userBaru.nama_lengkap, link);
 
-            mailer.send(Mail.withHtml(userBaru.email, "Aktivasi Akun Mudik", bodyEmail));
+            // FIX: Set "From" dengan nama agar tampil rapi di inbox penerima
+            mailer.send(Mail.withHtml(userBaru.email, "Aktivasi Akun Mudik Gratis", bodyEmail)
+                    .setFrom(mailFromName + " <" + mailUsername + ">"));
 
             return Response.ok(Map.of(
                     "status", "PENDING",
@@ -210,7 +220,9 @@ public class AuthResource {
 
         String bodyEmail = templateEmailReset(user.nama_lengkap, linkFrontend);
 
-        mailer.send(Mail.withHtml(user.email, "Reset Password Mudik Gratis", bodyEmail));
+        // FIX: Set "From" dengan nama agar tampil rapi di inbox penerima
+        mailer.send(Mail.withHtml(user.email, "Reset Password Mudik Gratis", bodyEmail)
+                .setFrom(mailFromName + " <" + mailUsername + ">"));
 
         return Response.ok(Map.of("pesan", "Link reset password telah dikirim ke email Anda.")).build();
     }
@@ -278,7 +290,8 @@ public class AuthResource {
     @PermitAll
     public Response testEmail(@QueryParam("target") String target) {
         try {
-            mailer.send(Mail.withText(target, "TEST VPS", "Email tembus bos!"));
+            mailer.send(Mail.withText(target, "TEST VPS", "Email tembus bos!")
+                    .setFrom(mailFromName + " <" + mailUsername + ">"));
             return Response.ok(Map.of("pesan", "Terkirim ke " + target)).build();
         } catch (Exception e) {
             return Response.serverError().entity(Map.of("error", e.getMessage())).build();

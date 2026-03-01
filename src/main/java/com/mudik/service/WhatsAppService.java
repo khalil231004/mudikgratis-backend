@@ -110,7 +110,7 @@ public class WhatsAppService {
                     "Kami informasikan bahwa *KUOTA RUTE " + namaRute.toUpperCase() + " TELAH PENUH*.\n\n" +
                     "Mohon maaf atas ketidaknyamanannya. Pantau terus dashboard untuk informasi ketersediaan kursi.\n\n" +
                     hotline + "\n\n" +
-                    "_Pesan otomatis Sistem Mudik Gratis Dishub Aceh_";
+                    "Pesan otomatis Sistem Mudik Gratis Dishub Aceh";
             return "https://wa.me/" + hpFormat + "?text=" + URLEncoder.encode(pesan, StandardCharsets.UTF_8.toString());
         } catch (Exception e) {
             return "#";
