@@ -1,5 +1,6 @@
 package com.mudik.resource;
 
+import com.mudik.model.PendaftaranMudik;
 import com.mudik.model.Rute;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.*;
@@ -32,7 +33,6 @@ public class RuteResource {
             map.put("tanggal_raw", r.tanggal_keberangkatan);
             map.put("waktu_berangkat", r.getFormattedDate());
 
-            // FIX 3: Pisahkan tanggal dan jam
             if (r.tanggal_keberangkatan != null) {
                 java.time.ZoneId wib = java.time.ZoneId.of("Asia/Jakarta");
                 java.time.ZonedDateTime wibTime = r.tanggal_keberangkatan.atZone(java.time.ZoneId.of("UTC")).withZoneSameInstant(wib);
@@ -43,18 +43,13 @@ public class RuteResource {
                 map.put("jam_berangkat", "-");
             }
 
-            // Info Kuota Public
             map.put("kuota_total", r.kuota_total != null ? r.kuota_total : 0);
-
-            // 🔥 UPDATE AMAN: Kirim dua-duanya biar Frontend User gak bingung
             map.put("kuota_tersisa", r.getSisaKuota());
             map.put("sisa_kuota", r.getSisaKuota());
 
-            // Status Seat
             boolean isPenuh = (r.getSisaKuota() <= 0);
             map.put("status_seat", isPenuh ? "HABIS" : "TERSEDIA");
 
-            // FIX 11: Info portal
             map.put("is_portal_open", r.is_portal_open != null ? r.is_portal_open : true);
 
             return map;
@@ -88,7 +83,6 @@ public class RuteResource {
             map.put("tanggal_raw", r.tanggal_keberangkatan);
             map.put("waktu_berangkat", r.getFormattedDate());
 
-            // FIX 3: Pisahkan tanggal dan jam
             if (r.tanggal_keberangkatan != null) {
                 java.time.ZoneId wib = java.time.ZoneId.of("Asia/Jakarta");
                 java.time.ZonedDateTime wibTime = r.tanggal_keberangkatan.atZone(java.time.ZoneId.of("UTC")).withZoneSameInstant(wib);
@@ -101,14 +95,16 @@ public class RuteResource {
 
             // 🔥 DETAIL KUOTA LENGKAP UTK ADMIN
             map.put("kuota_total", r.kuota_total != null ? r.kuota_total : 0);
-            map.put("kuota_terisi", r.kuota_terisi != null ? r.kuota_terisi : 0);
+            map.put("kuota_terisi", r.kuota_terisi != null ? r.kuota_terisi : 0); // hanya DITERIMA H-3 ke atas
             map.put("kuota_fix", r.kuota_fix != null ? r.kuota_fix : 0);
-
-            // 🔥 UPDATE AMAN: Kirim dua-duanya biar AdminRute.tsx pasti muncul angkanya
             map.put("sisa_kuota", r.getSisaKuota());
             map.put("kuota_tersisa", r.getSisaKuota());
 
-            // FIX 11: Info portal pendaftaran
+            // ✅ TAMBAHAN: Hitung total pendaftar MENUNGGU VERIFIKASI untuk info admin
+            long menunggu = PendaftaranMudik.count(
+                    "rute.rute_id = ?1 AND status_pendaftaran = 'MENUNGGU VERIFIKASI'", r.rute_id);
+            map.put("kuota_menunggu", menunggu); // informasi saja, tidak memakan kuota
+
             map.put("is_portal_open", r.is_portal_open != null ? r.is_portal_open : true);
 
             return map;
@@ -128,10 +124,7 @@ public class RuteResource {
             return Response.status(400).entity(Map.of("error", "Asal dan Tujuan wajib diisi")).build();
         }
 
-        // Logic Manual: Kalau admin kirim angka kuota, pake itu. Kalau null, 0.
-        if(ruteBaru.kuota_total == null) ruteBaru.kuota_total = 0;
-
-        // Reset counter (Aman)
+        if (ruteBaru.kuota_total == null) ruteBaru.kuota_total = 0;
         ruteBaru.kuota_terisi = 0;
         ruteBaru.kuota_fix = 0;
 
@@ -154,9 +147,7 @@ public class RuteResource {
         rute.tujuan = dataBaru.tujuan;
         rute.tanggal_keberangkatan = dataBaru.tanggal_keberangkatan;
 
-        // 🔥 Logic Manual Override:
-        // Admin bisa ubah angka kuota total kapan saja lewat menu edit
-        if(dataBaru.kuota_total != null) {
+        if (dataBaru.kuota_total != null) {
             rute.kuota_total = dataBaru.kuota_total;
         }
 
@@ -171,9 +162,14 @@ public class RuteResource {
         Rute rute = Rute.findById(id);
         if (rute == null) return Response.status(404).build();
 
-        // Safety: Jangan hapus rute kalau sudah ada yang daftar
-        if (rute.kuota_terisi != null && rute.kuota_terisi > 0) {
-            return Response.status(400).entity(Map.of("error", "Gagal hapus! Masih ada " + rute.kuota_terisi + " pendaftar di rute ini.")).build();
+        // ✅ REVISI: Cek pendaftar aktif dari DB langsung (bukan dari kuota_terisi)
+        //    karena MENUNGGU VERIFIKASI tidak lagi memakai kuota_terisi
+        long pendaftarAktif = PendaftaranMudik.count(
+                "rute.rute_id = ?1 AND status_pendaftaran NOT IN ('DITOLAK', 'DIBATALKAN')", id);
+        if (pendaftarAktif > 0) {
+            return Response.status(400).entity(Map.of(
+                    "error", "Gagal hapus! Masih ada " + pendaftarAktif + " pendaftar aktif di rute ini."
+            )).build();
         }
 
         rute.delete();

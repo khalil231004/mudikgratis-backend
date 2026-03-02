@@ -263,7 +263,7 @@ public class AuthResource {
         return """
             <!DOCTYPE html><html><body style='font-family:sans-serif;background:#f3f4f6;padding:20px;'>
             <div style='max-width:600px;margin:auto;background:white;padding:30px;border-radius:10px;text-align:center;'>
-                <h1 style='color:#1e40af;'>🚌 MUDIK GRATIS ACEH</h1>
+                <h1 style='color:#1e40af;'>MUDIK GRATIS PEMERINTAH ACEH 2026</h1>
                 <p>Halo <b>%s</b>, silakan verifikasi akun Anda:</p>
                 <a href='%s' style='display:inline-block;background:#2563EB;color:white;padding:12px 24px;text-decoration:none;border-radius:5px;margin:20px 0;'>Verifikasi Akun</a>
             </div></body></html>
