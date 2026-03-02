@@ -19,6 +19,10 @@ public class ExcelService {
     public byte[] generateLaporanExcel(List<PendaftaranMudik> dataList) throws IOException {
         try (Workbook workbook = new XSSFWorkbook()) {
 
+            // ── Sheet 1: RINGKASAN semua rute & bus ───────────────────────────────
+            buatSheetRingkasan(workbook, dataList);
+
+            // ── Sheet per-Rute ────────────────────────────────────────────────────
             Map<String, List<PendaftaranMudik>> dataPerRute = dataList.stream()
                     .collect(Collectors.groupingBy(p -> (p.rute != null ? p.rute.tujuan : "Tanpa Rute")));
 
@@ -37,6 +41,80 @@ public class ExcelService {
             workbook.write(out);
             return out.toByteArray();
         }
+    }
+
+    // ── Sheet Ringkasan: rekap semua rute + bus ───────────────────────────
+    private void buatSheetRingkasan(Workbook workbook, List<PendaftaranMudik> dataList) {
+        Sheet sheet = workbook.createSheet("RINGKASAN");
+        CellStyle headerStyle = createHeaderStyle(workbook);
+        CellStyle boldStyle   = workbook.createCellStyle();
+        Font f = workbook.createFont(); f.setBold(true); boldStyle.setFont(f);
+
+        int r = 0;
+
+        // ── Judul
+        Row rowJudul = sheet.createRow(r++);
+        Cell cJudul = rowJudul.createCell(0);
+        cJudul.setCellValue("REKAP MUDIK GRATIS — SEMUA RUTE");
+        cJudul.setCellStyle(boldStyle);
+        r++;
+
+        // ── Tabel Rekap Per Rute
+        Row hRute = sheet.createRow(r++);
+        String[] ruteH = {"No", "Rute Tujuan", "Total Daftar", "Diterima H-3", "Siap Berangkat", "Ditolak", "Dibatalkan", "Menunggu", "Dewasa", "Anak", "Bayi"};
+        for (int i = 0; i < ruteH.length; i++) { Cell c = hRute.createCell(i); c.setCellValue(ruteH[i]); c.setCellStyle(headerStyle); }
+
+        Map<String, List<PendaftaranMudik>> perRute = dataList.stream()
+                .collect(java.util.stream.Collectors.groupingBy(p -> p.rute != null ? (p.rute.asal + " → " + p.rute.tujuan) : "Tanpa Rute"));
+
+        int no = 1;
+        for (Map.Entry<String, List<PendaftaranMudik>> e : perRute.entrySet()) {
+            List<PendaftaranMudik> rL = e.getValue();
+            Row row = sheet.createRow(r++);
+            row.createCell(0).setCellValue(no++);
+            row.createCell(1).setCellValue(e.getKey());
+            row.createCell(2).setCellValue(rL.size());
+            row.createCell(3).setCellValue(rL.stream().filter(p -> "DITERIMA H-3".equals(p.status_pendaftaran)).count());
+            row.createCell(4).setCellValue(rL.stream().filter(p -> "TERVERIFIKASI/ SIAP BERANGKAT".equals(p.status_pendaftaran)).count());
+            row.createCell(5).setCellValue(rL.stream().filter(p -> "DITOLAK".equals(p.status_pendaftaran)).count());
+            row.createCell(6).setCellValue(rL.stream().filter(p -> "DIBATALKAN".equals(p.status_pendaftaran)).count());
+            row.createCell(7).setCellValue(rL.stream().filter(p -> "MENUNGGU VERIFIKASI".equals(p.status_pendaftaran)).count());
+            row.createCell(8).setCellValue(rL.stream().filter(p -> "DEWASA".equalsIgnoreCase(p.kategori_penumpang)).count());
+            row.createCell(9).setCellValue(rL.stream().filter(p -> "ANAK".equalsIgnoreCase(p.kategori_penumpang)).count());
+            row.createCell(10).setCellValue(rL.stream().filter(p -> "BAYI".equalsIgnoreCase(p.kategori_penumpang)).count());
+        }
+        r += 2;
+
+        // ── Tabel Rekap Per Bus
+        Row hBus = sheet.createRow(r++);
+        String[] busH = {"No", "Nama Armada", "Rute", "Plat Nomor", "Nama Supir", "Kapasitas", "Terisi", "Sisa"};
+        for (int i = 0; i < busH.length; i++) { Cell c = hBus.createCell(i); c.setCellValue(busH[i]); c.setCellStyle(headerStyle); }
+
+        // Kumpulkan data bus unik dari dataList
+        Map<String, com.mudik.model.Kendaraan> busMap = new java.util.LinkedHashMap<>();
+        for (PendaftaranMudik p : dataList) {
+            if (p.kendaraan != null && p.kendaraan.nama_armada != null) {
+                busMap.putIfAbsent(p.kendaraan.nama_armada, p.kendaraan);
+            }
+        }
+
+        int noBus = 1;
+        for (Map.Entry<String, com.mudik.model.Kendaraan> e : busMap.entrySet()) {
+            com.mudik.model.Kendaraan bus = e.getValue();
+            Row row = sheet.createRow(r++);
+            int kap = bus.kapasitas_total != null ? bus.kapasitas_total : 0;
+            int ter = bus.terisi != null ? bus.terisi : 0;
+            row.createCell(0).setCellValue(noBus++);
+            row.createCell(1).setCellValue(bus.nama_armada != null ? bus.nama_armada : "-");
+            row.createCell(2).setCellValue(bus.rute != null ? (bus.rute.asal + " → " + bus.rute.tujuan) : "-");
+            row.createCell(3).setCellValue(bus.plat_nomor != null ? bus.plat_nomor : "-");
+            row.createCell(4).setCellValue(bus.nama_supir != null ? bus.nama_supir : "-");
+            row.createCell(5).setCellValue(kap);
+            row.createCell(6).setCellValue(ter);
+            row.createCell(7).setCellValue(kap - ter);
+        }
+
+        for (int i = 0; i < 11; i++) sheet.autoSizeColumn(i);
     }
 
     private void buatIsiSheet(Workbook workbook, Sheet sheet, String namaRute, List<PendaftaranMudik> list) {
@@ -104,7 +182,7 @@ public class ExcelService {
         int startRow = 6;
         Row headerRow = sheet.createRow(startRow);
         // FIX: tambah kolom Bus Plotting sesuai assign kendaraan
-        String[] columns = {"No", "Nama Peserta", "NIK", "Kategori", "JK", "Titik Jemput", "No HP", "Kode Booking", "Status", "Bus Plotting"};
+        String[] columns = {"No", "Nama Peserta", "NIK", "Kategori", "JK", "Titik Jemput", "No HP", "Kode Booking", "Status", "Bus Plotting", "Rute"};
 
         for (int i = 0; i < columns.length; i++) {
             Cell cell = headerRow.createCell(i);
@@ -146,6 +224,12 @@ public class ExcelService {
             String namaArmada = (p.kendaraan != null && p.kendaraan.nama_armada != null)
                     ? p.kendaraan.nama_armada : "Belum Plotting";
             row.createCell(9).setCellValue(namaArmada);
+
+            // Kolom Rute
+            String namaRuteCell = (p.rute != null)
+                    ? (p.rute.asal != null ? p.rute.asal : "Banda Aceh") + " → " + p.rute.tujuan
+                    : "-";
+            row.createCell(10).setCellValue(namaRuteCell);
         }
 
         for (int i = 0; i < columns.length; i++) {
