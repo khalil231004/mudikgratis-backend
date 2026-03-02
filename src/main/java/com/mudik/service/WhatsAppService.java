@@ -7,6 +7,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 
+
 @ApplicationScoped
 public class WhatsAppService {
 
