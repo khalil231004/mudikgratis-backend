@@ -166,7 +166,6 @@ public class AdminResource {
                     p.rute.kuota_terisi = (p.rute.kuota_terisi == null ? 0 : p.rute.kuota_terisi) + 1;
                 }
                 p.alasan_tolak = null;
-                p.tolak_at = null; // reset batas perbaikan
                 p.link_konfirmasi_dikirim = false;
                 if (p.kendaraan != null) {
                     p.kendaraan.terisi = Math.max(0, (p.kendaraan.terisi != null ? p.kendaraan.terisi : 0) - 1);
@@ -198,7 +197,7 @@ public class AdminResource {
 
                 // FIX POIN 1: TIDAK kurangi kuota saat DITOLAK.
                 p.alasan_tolak = body.getOrDefault("alasan", "Ditolak oleh admin");
-                p.tolak_at = java.time.LocalDateTime.now(); // batas perbaikan 1 jam
+                p.tolak_at = null;
 
                 if (userId != null) {
                     List<PendaftaranMudik> keluarga = PendaftaranMudik.list("user.user_id = ?1", userId);

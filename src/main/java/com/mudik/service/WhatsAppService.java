@@ -35,30 +35,22 @@ public class WhatsAppService {
 
         String pesan = "";
         String linkAction = "";
-        // FIX 9: Tambahkan Hotline nomor
         String hotline = "📞 *Hotline Mudik Gratis Dishub Aceh:*\n08217653093 (WhatsApp)";
         String footer = "\n\n" + hotline + "\n\n_Pesan otomatis Sistem Mudik Gratis Dishub Aceh_";
 
         try {
             switch (tipe) {
                 case "TOLAK_DATA":
+                    // ✅ Batas perbaikan 1 jam DIHAPUS atas permintaan klien
                     String alasanFinal = (alasan != null && !alasan.isBlank()) ? alasan : "Data belum lengkap.";
-                    // Hitung batas waktu perbaikan (1 jam dari sekarang)
-                    java.time.LocalDateTime batasWaktu = java.time.LocalDateTime.now().plusHours(1);
-                    String batasFormatted = batasWaktu.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm"));
                     pesan = "👋 *Salam Seulamat dari Dishub Aceh*\n\n" +
                             "Yth. Sdr/i *" + p.nama_peserta + "*,\n" +
                             "Mohon maaf, Verifikasi Pendaftaran Mudik Anda *BELUM LENGKAP*.\n\n" +
                             "Catatan Petugas:\n" +
                             "👉 *" + alasanFinal + "*\n\n" +
-                            "⏰ *PERHATIAN — BATAS PERBAIKAN:*\n" +
-                            "Anda memiliki waktu *1 (satu) jam* untuk melakukan perbaikan data.\n" +
-                            "Batas Perbaikan: *" + batasFormatted + " WIB*\n\n" +
-                            "Jika data tidak diperbaiki sebelum batas waktu tersebut, pendaftaran Anda akan *OTOMATIS DIBATALKAN* dan kuota Anda akan diberikan kepada peserta lain.\n\n" +
-                            "Silakan login dan perbaiki data Anda di:\n";
+                            "Silakan login dan perbaiki data Anda di:\n" + baseUrl;
                     break;
 
-                // ── Kirim link konfirmasi (hanya dipanggil via endpoint kirim-link-konfirmasi)
                 case "DITERIMA(H-3)":
                     pesan = "👋 *Salam Seulamat dari Dishub Aceh*\n\n" +
                             "Yth. Sdr/i *" + p.nama_peserta + "*,\n" +
@@ -70,7 +62,6 @@ public class WhatsAppService {
                             "Pantau terus status tiket Anda di Dashboard aplikasi Seulamat.";
                     break;
 
-                // ── Notif diterima (tanpa link konfirmasi) — dipanggil saat admin klik Terima
                 default: // TERIMA
                     pesan = "👋 *Salam Seulamat dari Dishub Aceh*\n\n" +
                             "Yth. Sdr/i *" + p.nama_peserta + "*,\n" +
@@ -102,7 +93,6 @@ public class WhatsAppService {
         String hpFormat = noHp.replaceAll("[^0-9]", "");
         if (hpFormat.startsWith("0")) hpFormat = "62" + hpFormat.substring(1);
 
-        String baseUrl = frontendUrlOpt.orElse("https://dishubosrm.acehprov.go.id");
         String hotline = "📞 *Hotline:* 08217653093";
         try {
             String pesan = "👋 *Salam Seulamat dari Dishub Aceh*\n\n" +
@@ -115,4 +105,5 @@ public class WhatsAppService {
         } catch (Exception e) {
             return "#";
         }
-    }}
+    }
+}

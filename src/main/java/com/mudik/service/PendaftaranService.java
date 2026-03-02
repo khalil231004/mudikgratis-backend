@@ -212,14 +212,9 @@ public class PendaftaranService {
         Rute r = Rute.findById(p.rute.rute_id, LockModeType.PESSIMISTIC_WRITE);
         if (r.getSisaKuota() <= 0) throw new Exception("Kuota Rute Penuh! Tidak bisa mengajukan ulang.");
 
-        // Cek apakah masih dalam batas waktu 1 jam
-        if (p.tolak_at != null && p.tolak_at.plusHours(1).isBefore(java.time.LocalDateTime.now())) {
-            throw new Exception("Batas waktu perbaikan 1 jam telah terlewat. Pendaftaran Anda sudah tidak dapat diperbaiki.");
-        }
-
         p.status_pendaftaran = "MENUNGGU VERIFIKASI";
         p.alasan_tolak = null;
-        p.tolak_at = null; // reset batas perbaikan
+        p.tolak_at = null;
         if (r.kuota_terisi == null) r.kuota_terisi = 0;
         r.kuota_terisi += 1;
         r.persist();
@@ -270,9 +265,8 @@ public class PendaftaranService {
             if (sudahFinal && !"MENUNGGU VERIFIKASI".equalsIgnoreCase(statusBaru)) continue;
 
             if ("DITOLAK".equalsIgnoreCase(statusBaru)) {
-                // FIX POIN 1: DITOLAK TIDAK mengurangi kuota rute.
                 p.alasan_tolak = (alasan != null && !alasan.isBlank()) ? alasan : "Ditolak oleh admin";
-                p.tolak_at = java.time.LocalDateTime.now(); // batas 1 jam untuk perbaikan
+                p.tolak_at = null;
 
             } else if ("DIBATALKAN".equals(statusBaru)) {
                 boolean wasActive = !"DITOLAK".equals(statusLama)
@@ -351,7 +345,7 @@ public class PendaftaranService {
                 // DITOLAK tidak mengurangi kuota
                 p.status_pendaftaran = "DITOLAK";
                 p.alasan_tolak = alasan;
-                p.tolak_at = java.time.LocalDateTime.now(); // batas perbaikan 1 jam
+                p.tolak_at = null;
                 p.persist();
                 countDitolak++;
             } else if ("DITOLAK".equals(statusLama)) {

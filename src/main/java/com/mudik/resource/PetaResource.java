@@ -35,7 +35,8 @@ public class PetaResource {
 
         for (Rute r : semuaRute) {
             long jumlah = PendaftaranMudik.count(
-                    "rute = ?1 AND (status_pendaftaran = 'APPROVED' OR status_pendaftaran = 'DITERIMA')",
+                    "rute = ?1 AND (status_pendaftaran = 'DITERIMA H-3' " +
+                            "OR status_pendaftaran = 'TERVERIFIKASI/ SIAP BERANGKAT')",
                     r
             );
             if (jumlah > 0) {
