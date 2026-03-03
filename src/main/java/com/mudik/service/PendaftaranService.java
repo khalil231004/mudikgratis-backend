@@ -261,9 +261,15 @@ public class PendaftaranService {
         for (PendaftaranMudik p : keluarga) {
             String statusLama = p.status_pendaftaran;
 
-            // Status final (DITOLAK/DIBATALKAN) hanya bisa di-reset ke MENUNGGU
+            // Status final (DITOLAK/DIBATALKAN) hanya bisa di-reset ke MENUNGGU,
+            // atau jika target = status yang sama (idempotent, skip)
             boolean sudahFinal = "DITOLAK".equals(statusLama) || "DIBATALKAN".equals(statusLama);
-            if (sudahFinal && !"MENUNGGU VERIFIKASI".equalsIgnoreCase(statusBaru)) continue;
+            if (sudahFinal) {
+                // Jika target bukan MENUNGGU dan bukan status yang sama → skip
+                if (!"MENUNGGU VERIFIKASI".equalsIgnoreCase(statusBaru) && !statusLama.equals(statusBaru)) continue;
+                // Jika target = status yang sama → skip (idempotent, kuota sudah benar)
+                if (statusLama.equals(statusBaru)) continue;
+            }
 
             // Guard kuota saat masuk DITERIMA H-3
             if ("DITERIMA H-3".equals(statusBaru) && !pakaiKuota(statusLama) && rute.getSisaKuota() <= 0)
@@ -376,7 +382,7 @@ public class PendaftaranService {
                 p.alasan_tolak = null;
                 p.persist();
             }
-            rute.persist();
+            // FIX: Hanya satu rute.persist() di sini, bukan dua
         }
 
         String tipeWa = countDitolak > 0 ? "TOLAK_DATA" : "DITERIMA(H-3)";
