@@ -72,6 +72,7 @@ public class RuteResource {
 
     @GET
     @Path("/admin")
+    @jakarta.transaction.Transactional
     public Response getAllRuteAdmin() {
         List<Rute> listRute = Rute.list("ORDER BY tanggal_keberangkatan ASC");
 
@@ -93,12 +94,20 @@ public class RuteResource {
                 map.put("jam_berangkat", "-");
             }
 
-            // 🔥 DETAIL KUOTA LENGKAP UTK ADMIN
-            int kTotal  = r.kuota_total  != null ? r.kuota_total  : 0;
-            int kTerisi = r.kuota_terisi != null ? r.kuota_terisi : 0;
-            // Guard: kuota_terisi tidak boleh melebihi kuota_total, sisa tidak boleh minus
-            kTerisi = Math.min(kTerisi, kTotal);
-            int kSisa = Math.max(0, kTotal - kTerisi);
+            // ✅ FIX PERMANEN: Hitung kuota_terisi langsung dari DB aktual (bukan dari kolom yang bisa drift)
+            long kTerisiAktual = PendaftaranMudik.count(
+                    "rute.rute_id = ?1 AND status_pendaftaran IN ('DITERIMA H-3', 'TERVERIFIKASI/ SIAP BERANGKAT')",
+                    r.rute_id);
+
+            // Auto-sync kolom jika berbeda dari DB aktual
+            if (r.kuota_terisi == null || r.kuota_terisi != (int) kTerisiAktual) {
+                r.kuota_terisi = (int) kTerisiAktual;
+                r.persist();
+            }
+
+            int kTotal  = r.kuota_total != null ? r.kuota_total : 0;
+            int kTerisi = (int) kTerisiAktual;
+            int kSisa   = Math.max(0, kTotal - kTerisi);
 
             map.put("kuota_total",   kTotal);
             map.put("kuota_terisi",  kTerisi);
@@ -106,13 +115,20 @@ public class RuteResource {
             map.put("sisa_kuota",    kSisa);
             map.put("kuota_tersisa", kSisa);
 
-            // Jumlah pendaftar yang BELUM diproses (MENUNGGU VERIFIKASI + PENDING)
-            // — informasi saja, tidak memakan kuota
+            // Breakdown per status langsung dari DB
             long menunggu = PendaftaranMudik.count(
                     "rute.rute_id = ?1 AND status_pendaftaran IN ('MENUNGGU VERIFIKASI', 'PENDING')", r.rute_id);
             map.put("kuota_menunggu", menunggu);
 
-            // Total seluruh pendaftar aktif di rute ini (semua status kecuali DITOLAK & DIBATALKAN)
+            long ditolak = PendaftaranMudik.count(
+                    "rute.rute_id = ?1 AND status_pendaftaran = 'DITOLAK'", r.rute_id);
+            map.put("kuota_ditolak", ditolak);
+
+            long dibatalkan = PendaftaranMudik.count(
+                    "rute.rute_id = ?1 AND status_pendaftaran = 'DIBATALKAN'", r.rute_id);
+            map.put("kuota_dibatalkan", dibatalkan);
+
+            // Total aktif = semua kecuali DITOLAK & DIBATALKAN
             long totalDaftar = PendaftaranMudik.count(
                     "rute.rute_id = ?1 AND status_pendaftaran NOT IN ('DITOLAK', 'DIBATALKAN')", r.rute_id);
             map.put("total_daftar", totalDaftar);

@@ -66,10 +66,23 @@ public class AdminResource {
     // ================================================================
     @GET
     @Path("/pendaftar")
-    public Response getAllPendaftar(@QueryParam("rute_id") Long ruteId) {
-        List<PendaftaranMudik> list = ruteId != null
-                ? PendaftaranMudik.list("rute.rute_id = ?1 ORDER BY created_at ASC", ruteId)
-                : PendaftaranMudik.list("ORDER BY created_at ASC");
+    public Response getAllPendaftar(@QueryParam("rute_id") Long ruteId,
+                                    @QueryParam("include_batal") @DefaultValue("false") boolean includeBatal) {
+        // FIX: Default hanya tampilkan peserta aktif (bukan DIBATALKAN/DITOLAK)
+        // agar counter "Diterima H-3" di panel expand AdminRute akurat dan konsisten
+        // dengan kuota_terisi yang dihitung dari DB
+        List<PendaftaranMudik> list;
+        if (ruteId != null) {
+            list = includeBatal
+                    ? PendaftaranMudik.list("rute.rute_id = ?1 ORDER BY created_at ASC", ruteId)
+                    : PendaftaranMudik.list(
+                    "rute.rute_id = ?1 AND status_pendaftaran NOT IN ('DIBATALKAN', 'DITOLAK') ORDER BY created_at ASC",
+                    ruteId);
+        } else {
+            list = includeBatal
+                    ? PendaftaranMudik.list("ORDER BY created_at ASC")
+                    : PendaftaranMudik.list("status_pendaftaran NOT IN ('DIBATALKAN', 'DITOLAK') ORDER BY created_at ASC");
+        }
 
         List<Map<String, Object>> result = list.stream().map(p -> {
             Map<String, Object> map = new HashMap<>();
