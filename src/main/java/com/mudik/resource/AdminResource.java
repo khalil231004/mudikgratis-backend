@@ -672,6 +672,68 @@ public class AdminResource {
     }
 
     // ================================================================
+    // 11b. PINDAH RUTE DARURAT
+    //      Memindahkan seluruh anggota keluarga ke rute berbeda.
+    //      Hanya berlaku saat status MENUNGGU VERIFIKASI atau PENDING.
+    //      Kuota tidak terpengaruh (status tetap MENUNGGU, bukan zona kuota).
+    // ================================================================
+    @PUT
+    @Path("/pindah-rute/{userId}")
+    @Transactional
+    public Response pindahRute(@PathParam("userId") Long userId, Map<String, Object> body) {
+        try {
+            Object ruteIdObj = body.get("rute_id");
+            if (ruteIdObj == null)
+                return Response.status(400).entity(Map.of("error", "rute_id wajib diisi")).build();
+
+            Long ruteIdBaru = Long.valueOf(ruteIdObj.toString());
+            Rute ruteBaru = Rute.findById(ruteIdBaru);
+            if (ruteBaru == null)
+                return Response.status(404).entity(Map.of("error", "Rute tujuan tidak ditemukan")).build();
+
+            List<PendaftaranMudik> keluarga = PendaftaranMudik.list("user.user_id = ?1", userId);
+            if (keluarga.isEmpty())
+                return Response.status(404).entity(Map.of("error", "Data keluarga tidak ditemukan")).build();
+
+            // Validasi: semua anggota harus di status yang aman untuk dipindah
+            for (PendaftaranMudik p : keluarga) {
+                String st = p.status_pendaftaran;
+                boolean bolehPindah = "MENUNGGU VERIFIKASI".equals(st) || "PENDING".equals(st)
+                        || "DITOLAK".equals(st) || "DIBATALKAN".equals(st);
+                if (!bolehPindah)
+                    return Response.status(400).entity(Map.of(
+                            "error", "Tidak bisa pindah rute: " + p.nama_peserta + " berstatus " + st
+                                    + ". Hanya bisa pindah saat status MENUNGGU VERIFIKASI."
+                    )).build();
+            }
+
+            int jumlah = 0;
+            for (PendaftaranMudik p : keluarga) {
+                // Skip yang sudah final permanen (DIBATALKAN/DITOLAK tidak perlu dipindah,
+                // tapi jika mau ikut rute baru reset ke MENUNGGU)
+                if ("DIBATALKAN".equals(p.status_pendaftaran) || "DITOLAK".equals(p.status_pendaftaran)) continue;
+                p.rute = ruteBaru;
+                p.status_pendaftaran = "MENUNGGU VERIFIKASI";
+                p.alasan_tolak = null;
+                p.kendaraan = null;
+                p.link_konfirmasi_dikirim = false;
+                p.persist();
+                jumlah++;
+            }
+
+            return Response.ok(Map.of(
+                    "status", "BERHASIL",
+                    "pesan", jumlah + " anggota keluarga berhasil dipindah ke rute "
+                            + ruteBaru.asal + " → " + ruteBaru.tujuan + ".",
+                    "jumlah", jumlah
+            )).build();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Response.status(500).entity(Map.of("error", e.getMessage())).build();
+        }
+    }
+
+    // ================================================================
     // 11. HAPUS PERMANEN DATA DIBATALKAN
     //     Agar NIK, nama, dan user_id bisa didaftarkan ulang ke rute lain.
     //     Hanya record berstatus DIBATALKAN yang boleh dihapus.
