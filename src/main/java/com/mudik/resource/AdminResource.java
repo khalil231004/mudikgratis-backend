@@ -670,4 +670,71 @@ public class AdminResource {
             return Response.status(500).entity(Map.of("error", e.getMessage())).build();
         }
     }
+
+    // ================================================================
+    // 11. HAPUS PERMANEN DATA DIBATALKAN
+    //     Agar NIK, nama, dan user_id bisa didaftarkan ulang ke rute lain.
+    //     Hanya record berstatus DIBATALKAN yang boleh dihapus.
+    //     Dipanggil oleh admin setelah membatalkan peserta.
+    // ================================================================
+
+    /**
+     * Hard-delete SATU record pendaftaran (harus berstatus DIBATALKAN).
+     * DELETE /api/admin/hapus-pendaftaran/{id}
+     */
+    @DELETE
+    @Path("/hapus-pendaftaran/{id}")
+    @Transactional
+    public Response hapusPendaftaran(@PathParam("id") Long id) {
+        try {
+            PendaftaranMudik p = PendaftaranMudik.findById(id);
+            if (p == null)
+                return Response.status(404).entity(Map.of("error", "Data tidak ditemukan")).build();
+            if (!"DIBATALKAN".equals(p.status_pendaftaran))
+                return Response.status(400).entity(Map.of(
+                        "error", "Hanya data berstatus DIBATALKAN yang bisa dihapus permanen. Status saat ini: " + p.status_pendaftaran
+                )).build();
+
+            String nama = p.nama_peserta;
+            p.delete();
+            return Response.ok(Map.of("status", "BERHASIL", "pesan", "Data " + nama + " berhasil dihapus permanen. NIK dan akun dapat didaftarkan ulang.")).build();
+        } catch (Exception e) {
+            return Response.status(500).entity(Map.of("error", e.getMessage())).build();
+        }
+    }
+
+    /**
+     * Hard-delete SEMUA record DIBATALKAN milik satu user (keluarga).
+     * DELETE /api/admin/hapus-pendaftaran/keluarga/{userId}
+     */
+    @DELETE
+    @Path("/hapus-pendaftaran/keluarga/{userId}")
+    @Transactional
+    public Response hapusPendaftaranKeluarga(@PathParam("userId") Long userId) {
+        try {
+            List<PendaftaranMudik> dibatalkan = PendaftaranMudik.list(
+                    "user.user_id = ?1 AND status_pendaftaran = 'DIBATALKAN'", userId);
+
+            if (dibatalkan.isEmpty())
+                return Response.status(404).entity(Map.of(
+                        "error", "Tidak ada data DIBATALKAN untuk user ini."
+                )).build();
+
+            // Pastikan TIDAK ada record aktif (non-DIBATALKAN, non-DITOLAK) sebelum hapus
+            // agar tidak salah hapus keluarga yang sebagian masih aktif
+            long masihAktif = PendaftaranMudik.count(
+                    "user.user_id = ?1 AND status_pendaftaran NOT IN ('DIBATALKAN', 'DITOLAK')", userId);
+
+            int jumlah = dibatalkan.size();
+            for (PendaftaranMudik p : dibatalkan) {
+                p.delete();
+            }
+
+            String pesan = jumlah + " data DIBATALKAN berhasil dihapus permanen."
+                    + (masihAktif > 0 ? " (" + masihAktif + " data aktif lain milik user ini tidak tersentuh.)" : " User dapat mendaftar ulang ke rute lain.");
+            return Response.ok(Map.of("status", "BERHASIL", "pesan", pesan, "jumlah_dihapus", jumlah)).build();
+        } catch (Exception e) {
+            return Response.status(500).entity(Map.of("error", e.getMessage())).build();
+        }
+    }
 }
