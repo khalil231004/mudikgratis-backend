@@ -799,4 +799,50 @@ public class AdminResource {
             return Response.status(500).entity(Map.of("error", e.getMessage())).build();
         }
     }
+
+    // ================================================================
+    // 12. HAPUS USER + SEMUA DATA PENDAFTARAN
+    //     Hanya boleh jika semua pendaftaran berstatus
+    //     MENUNGGU VERIFIKASI, DITOLAK, atau DIBATALKAN.
+    //     DELETE /api/admin/hapus-user/{userId}
+    // ================================================================
+    @DELETE
+    @Path("/hapus-user/{userId}")
+    @Transactional
+    public Response hapusUser(@PathParam("userId") Long userId) {
+        try {
+            com.mudik.model.User user = com.mudik.model.User.findById(userId);
+            if (user == null)
+                return Response.status(404).entity(Map.of("error", "User tidak ditemukan")).build();
+
+            List<PendaftaranMudik> semuaPendaftaran = PendaftaranMudik.list("user.user_id = ?1", userId);
+
+            // Validasi: tidak boleh ada yang DITERIMA H-3 atau SIAP BERANGKAT
+            for (PendaftaranMudik p : semuaPendaftaran) {
+                String st = p.status_pendaftaran != null ? p.status_pendaftaran : "";
+                if (st.contains("DITERIMA") || st.contains("SIAP BERANGKAT") || st.contains("TERKONFIRMASI")) {
+                    return Response.status(400).entity(Map.of(
+                            "error", "Tidak bisa hapus! " + p.nama_peserta + " masih berstatus " + st +
+                                    ". Batalkan dulu semua pendaftaran aktif."
+                    )).build();
+                }
+            }
+
+            // Hapus semua data pendaftaran
+            int jumlahPendaftaran = semuaPendaftaran.size();
+            for (PendaftaranMudik p : semuaPendaftaran) {
+                p.delete();
+            }
+
+            String namaUser = user.nama_lengkap != null ? user.nama_lengkap : "User #" + userId;
+            return Response.ok(Map.of(
+                    "status", "BERHASIL",
+                    "pesan", jumlahPendaftaran + " data pendaftaran keluarga " + namaUser + " berhasil dihapus. Akun login tetap aktif.",
+                    "jumlah_pendaftaran", jumlahPendaftaran
+            )).build();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Response.status(500).entity(Map.of("error", e.getMessage())).build();
+        }
+    }
 }
