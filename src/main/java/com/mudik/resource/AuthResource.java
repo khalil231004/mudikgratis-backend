@@ -258,7 +258,7 @@ public class AuthResource {
     // TEMPLATE EMAIL
     // ==========================================
 
-    // Template Verifikasi Akun
+    /// Template Verifikasi Akun
     private String templateEmailVerifikasi(String nama, String link) {
         return """
             <!DOCTYPE html><html><body style='font-family:sans-serif;background:#f3f4f6;padding:20px;'>
