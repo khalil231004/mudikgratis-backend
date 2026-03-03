@@ -94,16 +94,28 @@ public class RuteResource {
             }
 
             // 🔥 DETAIL KUOTA LENGKAP UTK ADMIN
-            map.put("kuota_total", r.kuota_total != null ? r.kuota_total : 0);
-            map.put("kuota_terisi", r.kuota_terisi != null ? r.kuota_terisi : 0); // hanya DITERIMA H-3 ke atas
-            map.put("kuota_fix", r.kuota_fix != null ? r.kuota_fix : 0);
-            map.put("sisa_kuota", r.getSisaKuota());
-            map.put("kuota_tersisa", r.getSisaKuota());
+            int kTotal  = r.kuota_total  != null ? r.kuota_total  : 0;
+            int kTerisi = r.kuota_terisi != null ? r.kuota_terisi : 0;
+            // Guard: kuota_terisi tidak boleh melebihi kuota_total, sisa tidak boleh minus
+            kTerisi = Math.min(kTerisi, kTotal);
+            int kSisa = Math.max(0, kTotal - kTerisi);
 
-            // ✅ TAMBAHAN: Hitung total pendaftar MENUNGGU VERIFIKASI untuk info admin
+            map.put("kuota_total",   kTotal);
+            map.put("kuota_terisi",  kTerisi);
+            map.put("kuota_fix",     r.kuota_fix != null ? r.kuota_fix : 0);
+            map.put("sisa_kuota",    kSisa);
+            map.put("kuota_tersisa", kSisa);
+
+            // Jumlah pendaftar yang BELUM diproses (MENUNGGU VERIFIKASI + PENDING)
+            // — informasi saja, tidak memakan kuota
             long menunggu = PendaftaranMudik.count(
-                    "rute.rute_id = ?1 AND status_pendaftaran = 'MENUNGGU VERIFIKASI'", r.rute_id);
-            map.put("kuota_menunggu", menunggu); // informasi saja, tidak memakan kuota
+                    "rute.rute_id = ?1 AND status_pendaftaran IN ('MENUNGGU VERIFIKASI', 'PENDING')", r.rute_id);
+            map.put("kuota_menunggu", menunggu);
+
+            // Total seluruh pendaftar aktif di rute ini (semua status kecuali DITOLAK & DIBATALKAN)
+            long totalDaftar = PendaftaranMudik.count(
+                    "rute.rute_id = ?1 AND status_pendaftaran NOT IN ('DITOLAK', 'DIBATALKAN')", r.rute_id);
+            map.put("total_daftar", totalDaftar);
 
             map.put("is_portal_open", r.is_portal_open != null ? r.is_portal_open : true);
 
