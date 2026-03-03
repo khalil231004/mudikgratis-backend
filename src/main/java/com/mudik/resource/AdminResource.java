@@ -671,6 +671,49 @@ public class AdminResource {
         }
     }
 
+
+    // ================================================================
+    // 11a. TERIMA DARURAT — bypass validasi kuota
+    //      Langsung set semua anggota keluarga ke DITERIMA H-3
+    //      tanpa cek sisa kuota. Kuota_terisi tetap di-update.
+    //      PUT /api/admin/terima-darurat/{userId}
+    // ================================================================
+    @PUT
+    @Path("/terima-darurat/{userId}")
+    @Transactional
+    public Response terimaDarurat(@PathParam("userId") Long userId) {
+        try {
+            List<PendaftaranMudik> keluarga = PendaftaranMudik.list("user.user_id = ?1", userId);
+            if (keluarga.isEmpty())
+                return Response.status(404).entity(Map.of("error", "Data keluarga tidak ditemukan")).build();
+
+            Rute rute = keluarga.get(0).rute != null
+                    ? Rute.findById(keluarga.get(0).rute.rute_id, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+                    : null;
+
+            int jumlah = 0;
+            for (PendaftaranMudik p : keluarga) {
+                String statusLama = p.status_pendaftaran;
+                if ("DITERIMA H-3".equals(statusLama) || "TERVERIFIKASI/ SIAP BERANGKAT".equals(statusLama)) continue;
+                if (rute != null && !pakaiKuota(statusLama)) {
+                    if (rute.kuota_terisi == null) rute.kuota_terisi = 0;
+                    rute.kuota_terisi += 1;
+                }
+                p.status_pendaftaran = "DITERIMA H-3";
+                p.alasan_tolak = null;
+                p.tolak_at = null;
+                p.link_konfirmasi_dikirim = false;
+                p.persist();
+                jumlah++;
+            }
+            if (rute != null) rute.persist();
+            return Response.ok(Map.of("status", "BERHASIL", "pesan", jumlah + " anggota berhasil diterima (DARURAT). Kuota dilewati.", "jumlah", jumlah)).build();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Response.status(500).entity(Map.of("error", e.getMessage())).build();
+        }
+    }
+
     // ================================================================
     // 11b. PINDAH RUTE DARURAT
     //      Memindahkan seluruh anggota keluarga ke rute berbeda.
