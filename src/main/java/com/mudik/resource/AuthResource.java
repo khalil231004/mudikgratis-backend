@@ -116,7 +116,7 @@ public class AuthResource {
 
             return Response.ok(Map.of(
                     "status", "REGISTER_SUKSES",
-                    "pesan", "Akun berhasil dibuat!",
+                    "pesan", "Akun berhasil dibuat b!",
                     "token", token,
                     "role", userBaru.role,
                     "nama", userBaru.nama_lengkap
