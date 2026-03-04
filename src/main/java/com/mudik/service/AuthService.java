@@ -10,20 +10,19 @@ public class AuthService {
 
     /**
      * Registrasi langsung tanpa verifikasi email.
-     * Status akun langsung AKTIF setelah daftar.
+     * Email diterima tapi tidak divalidasi duplikat — status langsung AKTIF.
      */
     @Transactional
-    public User registerUser(String nama, String password, String nik, String nohp, String jenisKelamin) throws Exception {
+    public User registerUser(String nama, String email, String password, String nik, String nohp, String jenisKelamin) throws Exception {
 
         // Validasi NIK Duplikat
         if (User.count("nik", nik) > 0) {
             throw new Exception("NIK sudah terdaftar. Silakan login atau gunakan NIK lain.");
         }
 
-        // Persiapan Data User Baru
         User newUser = new User();
         newUser.nama_lengkap = nama;
-        newUser.email = null; // Email tidak digunakan
+        newUser.email = email; // Simpan email (bisa dummy), tidak dipakai untuk login
         newUser.password_hash = BcryptUtil.bcryptHash(password);
         newUser.nik = nik;
         newUser.no_hp = nohp;
@@ -37,7 +36,7 @@ public class AuthService {
     }
 
     /**
-     * Login menggunakan NIK (bukan email).
+     * Login menggunakan NIK.
      */
     public User loginUser(String nik, String passwordInput) throws Exception {
         User user = User.find("nik", nik).firstResult();

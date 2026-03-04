@@ -4,7 +4,6 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.mudik.model.User;
 import com.mudik.model.PortalConfig;
 import com.mudik.service.AuthService;
-import io.quarkus.elytron.security.common.BcryptUtil;
 import io.smallrye.jwt.build.Jwt;
 import jakarta.annotation.security.PermitAll;
 import jakarta.inject.Inject;
@@ -37,6 +36,7 @@ public class AuthResource {
     // DTO Classes
     public static class RegisterRequest {
         @JsonProperty("nama_lengkap") public String nama_lengkap;
+        public String email;       // Diterima tapi tidak dipakai untuk verifikasi
         public String password;
         public String nik;
         @JsonProperty("no_hp") public String no_hp;
@@ -44,12 +44,12 @@ public class AuthResource {
     }
 
     public static class LoginRequest {
-        public String nik;       // Login menggunakan NIK (bukan email)
+        public String nik;         // Login pakai NIK
         public String password;
     }
 
     // ==========================================
-    // 1. REGISTER — Langsung aktif tanpa verifikasi email
+    // 1. REGISTER — Langsung aktif, tanpa kirim email verifikasi
     // ==========================================
     @POST
     @Path("/register")
@@ -76,9 +76,9 @@ public class AuthResource {
                 )).build();
             }
 
-            // Registrasi langsung — status AKTIF, tanpa email
+            // Registrasi — email diteruskan ke service tapi tidak dipakai verifikasi
             authService.registerUser(
-                    req.nama_lengkap, req.password,
+                    req.nama_lengkap, req.email, req.password,
                     req.nik, req.no_hp, req.jenis_kelamin
             );
 
@@ -93,7 +93,7 @@ public class AuthResource {
     }
 
     // ==========================================
-    // 2. LOGIN — Menggunakan NIK
+    // 2. LOGIN — Pakai NIK
     // ==========================================
     @POST
     @Path("/login")
@@ -102,17 +102,9 @@ public class AuthResource {
         try {
             User user = authService.loginUser(req.nik, req.password);
 
-            if ("BANNED".equals(user.status_akun)) {
-                return Response.status(401).entity(Map.of("error", "Akun Anda telah diblokir. Hubungi admin.")).build();
-            }
-
-            if ("BELUM_VERIF".equals(user.status_akun)) {
-                return Response.status(401).entity(Map.of("error", "Akun Anda belum diaktifkan. Hubungi admin.")).build();
-            }
-
             SecretKey kunci = new SecretKeySpec(jwtSecret.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
             String token = Jwt.issuer(baseUrl)
-                    .upn(user.nik)
+                    .upn(user.nik != null ? user.nik : String.valueOf(user.user_id))
                     .groups(new HashSet<>(List.of(user.role)))
                     .claim("id_user", user.user_id)
                     .claim("nama", user.nama_lengkap)
@@ -129,5 +121,16 @@ public class AuthResource {
         } catch (Exception e) {
             return Response.status(401).entity(Map.of("error", e.getMessage())).build();
         }
+    }
+
+    // ==========================================
+    // 3. REQUEST RESET PASSWORD (tetap ada untuk kompatibilitas)
+    // ==========================================
+    @POST
+    @Path("/request-reset-password")
+    @PermitAll
+    @Transactional
+    public Response requestResetPassword(Map<String, String> body) {
+        return Response.status(404).entity(Map.of("error", "Fitur reset password via email tidak tersedia. Hubungi admin.")).build();
     }
 }
