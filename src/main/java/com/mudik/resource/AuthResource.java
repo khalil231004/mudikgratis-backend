@@ -47,11 +47,10 @@ public class AuthResource {
      * DTO Login fleksibel:
      * - User biasa  → kirim field "nik" + "password"
      * - Admin       → kirim field "email" + "password"
-     * Backend akan otomatis deteksi mana yang terisi.
      */
     public static class LoginRequest {
-        public String nik;      // untuk user biasa
-        public String email;    // untuk admin (login lama pakai email)
+        public String nik;
+        public String email;
         public String password;
     }
 
@@ -61,7 +60,7 @@ public class AuthResource {
     }
 
     // ==========================================
-    // 1. REGISTER — Status langsung AKTIF
+    // 1. REGISTER — Status langsung AKTIF, tanpa email
     // ==========================================
     @POST
     @Path("/register")
@@ -69,7 +68,7 @@ public class AuthResource {
     @Transactional
     public Response register(RegisterRequest req) {
         try {
-            // ── PORTAL CHECK ────────────────────────────────────────
+            // ── PORTAL CHECK ─────────────────────────────────────
             PortalConfig portalCfg = PortalConfig.getInstance();
             if (!Boolean.TRUE.equals(portalCfg.sesi_aktif)) {
                 return Response.status(403).entity(Map.of(
@@ -87,16 +86,14 @@ public class AuthResource {
                         "portal_type", "REGISTER_TUTUP"
                 )).build();
             }
-            // ── END PORTAL CHECK ────────────────────────────────────
+            // ── END PORTAL CHECK ──────────────────────────────────
 
-            User userBaru = authService.registerUser(
+            // FIX: authService.registerUser sudah persist() di dalamnya.
+            // Jangan panggil persist() lagi di sini — itu penyebab bug NIK duplikat palsu.
+            authService.registerUser(
                     req.nama_lengkap, req.password,
                     req.nik, req.no_hp, req.jenis_kelamin
             );
-
-            // Sudah AKTIF dari registerUser, pastikan token null
-            userBaru.verification_token = null;
-            userBaru.persist();
 
             return Response.ok(Map.of(
                     "status", "SUKSES",
@@ -116,7 +113,7 @@ public class AuthResource {
     @PermitAll
     public Response login(LoginRequest req) {
         try {
-            // Tentukan identifier: gunakan email jika ada, fallback ke nik
+            // Gunakan email jika ada (admin), fallback ke nik (user biasa)
             String identifier = (req.email != null && !req.email.isBlank())
                     ? req.email
                     : req.nik;
@@ -133,7 +130,7 @@ public class AuthResource {
                 )).build();
             }
 
-            // Gunakan NIK sebagai upn jika ada, fallback ke email
+            // upn pakai NIK untuk user, email untuk admin
             String upn = (user.nik != null && !user.nik.isBlank()) ? user.nik : user.email;
 
             SecretKey kunci = new SecretKeySpec(jwtSecret.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
@@ -158,7 +155,7 @@ public class AuthResource {
     }
 
     // ==========================================
-    // 3. EKSEKUSI RESET PASSWORD
+    // 3. RESET PASSWORD
     // ==========================================
     @POST
     @Path("/reset-password")
@@ -170,7 +167,6 @@ public class AuthResource {
         }
 
         User user = User.find("verification_token", req.token).firstResult();
-
         if (user == null) {
             return Response.status(400).entity(Map.of("error", "Token tidak valid atau kadaluarsa")).build();
         }
