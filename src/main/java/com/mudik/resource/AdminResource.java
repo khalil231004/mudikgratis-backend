@@ -103,9 +103,10 @@ public class AdminResource {
             String hp = (p.no_hp_peserta != null && p.no_hp_peserta.length() > 5) ? p.no_hp_peserta : (p.user != null ? p.user.no_hp : "");
             map.put("no_hp_target", hp);
             if (p.foto_identitas_path != null) map.put("foto_bukti", "/uploads/" + new File(p.foto_identitas_path).getName());
-            map.put("link_wa_terima", waService.generateLink(hp, "TERIMA", p, null));
-            map.put("link_wa_tolak",  waService.generateLink(hp, "TOLAK_DATA", p, "Data tidak valid"));
-            map.put("link_wa_h3",     waService.generateLink(hp, "DITERIMA(H-3)", p, null));
+            // SAPA Blast: pesan dikirim otomatis dari backend, link tidak diperlukan frontend
+            map.put("link_wa_terima", "");
+            map.put("link_wa_tolak",  "");
+            map.put("link_wa_h3",     "");
             return map;
         }).collect(Collectors.toList());
 
@@ -328,8 +329,14 @@ public class AdminResource {
             String hp = (wakil.no_hp_peserta != null && wakil.no_hp_peserta.length() > 5)
                     ? wakil.no_hp_peserta : (wakil.user != null ? wakil.user.no_hp : "");
             for (PendaftaranMudik p : keluarga) { p.link_konfirmasi_dikirim = true; p.persist(); }
-            return Response.ok(Map.of("status", "BERHASIL", "pesan", "Link konfirmasi berhasil dikirim.",
-                    "link_wa", waService.generateLink(hp, "DITERIMA(H-3)", wakil, null))).build();
+            // SAPA Blast: kirim pesan WA langsung dari server
+            String waResult = waService.sendMessage(hp, "DITERIMA(H-3)", wakil, null);
+            return Response.ok(Map.of(
+                    "status", "BERHASIL",
+                    "pesan", "Pesan konfirmasi berhasil dikirim ke peserta via SAPA Blast.",
+                    "wa_result", waResult,
+                    "link_wa", "" // tidak diperlukan, pesan sudah dikirim otomatis
+            )).build();
         } catch (Exception e) {
             return Response.status(400).entity(Map.of("error", e.getMessage())).build();
         }
@@ -617,11 +624,17 @@ public class AdminResource {
                 String hp = (p.no_hp_peserta != null && p.no_hp_peserta.length() > 7)
                         ? p.no_hp_peserta : (p.user != null ? p.user.no_hp : null);
                 if (hp != null && !hpSudahDikirim.contains(hp)) {
-                    links.add(waService.generateKuotaPenuhLink(hp, p.nama_peserta, rute.tujuan));
+                    // SAPA Blast: kirim langsung dari server
+                    String hasil = waService.sendKuotaPenuh(hp, p.nama_peserta, rute.tujuan);
+                    links.add(hp + " → " + hasil);
                     hpSudahDikirim.add(hp);
                 }
             }
-            return Response.ok(Map.of("status", "BERHASIL", "pesan", "Siap kirim ke " + links.size() + " nomor", "wa_links", links)).build();
+            return Response.ok(Map.of(
+                    "status", "BERHASIL",
+                    "pesan", "Notifikasi kuota penuh dikirim ke " + links.size() + " nomor via SAPA Blast.",
+                    "detail", links
+            )).build();
         } catch (Exception e) {
             return Response.status(400).entity(Map.of("error", e.getMessage())).build();
         }
