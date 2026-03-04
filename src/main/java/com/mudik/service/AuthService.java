@@ -9,49 +9,56 @@ import jakarta.transaction.Transactional;
 public class AuthService {
 
     /**
-     * Registrasi user baru — tanpa field email, tanpa verifikasi email.
-     * Status langsung AKTIF.
+     * Logika Registrasi tanpa verifikasi email.
+     * User langsung AKTIF setelah register.
      */
     @Transactional
-    public User registerUser(String nama, String password, String nik, String nohp, String jenisKelamin) throws Exception {
+    public User registerUser(String nama, String email, String password, String nik, String nohp, String jenisKelamin) throws Exception {
 
-        // Validasi NIK Duplikat
+        // 1. Validasi NIK Duplikat
         if (User.count("nik", nik) > 0) {
             throw new Exception("NIK sudah terdaftar. Silakan login atau gunakan NIK lain.");
         }
 
+        // 2. Generate email internal dari NIK jika email tidak diberikan
+        // (kolom email NOT NULL UNIQUE di DB — pakai NIK sebagai identifier unik)
+        String resolvedEmail = (email != null && !email.isBlank())
+                ? email
+                : nik + "@user.internal";
+
+        // 3. Validasi Email Duplikat (hanya jika email asli diberikan)
+        if (email != null && !email.isBlank() && User.count("email", email) > 0) {
+            throw new Exception("Email sudah terdaftar. Gunakan email lain.");
+        }
+
+        // 4. Persiapan Data User Baru
         User newUser = new User();
         newUser.nama_lengkap = nama;
+        newUser.email = resolvedEmail;
         newUser.password_hash = BcryptUtil.bcryptHash(password);
         newUser.nik = nik;
         newUser.no_hp = nohp;
         newUser.jenis_kelamin = jenisKelamin;
-        newUser.role = "USER";
-        newUser.status_akun = "AKTIF";
 
+        newUser.role = "USER";
+        // Langsung AKTIF — tidak perlu verifikasi email
+        newUser.status_akun = "AKTIF";
+        newUser.verification_token = null;
+
+        // Simpan ke Database
         newUser.persist();
+
         return newUser;
     }
 
     /**
-     * Login fleksibel: bisa pakai NIK (user biasa) ATAU email (admin).
-     * Deteksi otomatis berdasarkan format input — jika mengandung '@' dianggap email.
+     * Logika Login
      */
-    public User loginUser(String identifier, String passwordInput) throws Exception {
-        User user = null;
+    public User loginUser(String email, String passwordInput) throws Exception {
+        User user = User.find("email", email).firstResult();
 
-        // Jika mengandung '@' → cari by email (untuk admin)
-        // Jika tidak → cari by NIK (untuk user biasa)
-        if (identifier != null && identifier.contains("@")) {
-            user = User.find("email", identifier).firstResult();
-            if (user == null) {
-                throw new Exception("Email tidak ditemukan.");
-            }
-        } else {
-            user = User.find("nik", identifier).firstResult();
-            if (user == null) {
-                throw new Exception("NIK tidak ditemukan.");
-            }
+        if (user == null) {
+            throw new Exception("Email tidak ditemukan.");
         }
 
         if (!BcryptUtil.matches(passwordInput, user.password_hash)) {
