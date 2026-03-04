@@ -30,7 +30,7 @@ public class WhatsAppService {
     // ⚠️ FIX: URL KirimPesan harus pakai service_name sesuai akun SAPA
     // Format: Base_url/service_name/WhatsApp/KirimPesan
     // Ganti "MudikDishub" dengan service_name akun SAPA yang sebenarnya
-    @ConfigProperty(name = "sapa.api.kirim.url", defaultValue = "https://sapa.acehprov.go.id/MudikDishub/WhatsApp/KirimPesan")
+    @ConfigProperty(name = "sapa.api.kirim.url", defaultValue = "https://sapa.acehprov.go.id/Api/WhatsApp/KirimPesan")
     String sapaKirimUrl;
 
     @ConfigProperty(name = "sapa.api.email", defaultValue = "selamataceh@dishub.com")
