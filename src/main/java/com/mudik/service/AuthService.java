@@ -15,26 +15,25 @@ public class AuthService {
     @Transactional
     public User registerUser(String nama, String email, String password, String nik, String nohp, String jenisKelamin) throws Exception {
 
-        // 1. Validasi NIK Duplikat
+        // 1. Validasi Input Wajib
+        if (email == null || email.isBlank()) {
+            throw new Exception("Email wajib diisi.");
+        }
+
+        // 2. Validasi NIK Duplikat
         if (User.count("nik", nik) > 0) {
             throw new Exception("NIK sudah terdaftar. Silakan login atau gunakan NIK lain.");
         }
 
-        // 2. Generate email internal dari NIK jika email tidak diberikan
-        // (kolom email NOT NULL UNIQUE di DB — pakai NIK sebagai identifier unik)
-        String resolvedEmail = (email != null && !email.isBlank())
-                ? email
-                : nik + "@user.internal";
-
-        // 3. Validasi Email Duplikat (hanya jika email asli diberikan)
-        if (email != null && !email.isBlank() && User.count("email", email) > 0) {
+        // 3. Validasi Email Duplikat
+        if (User.count("email", email) > 0) {
             throw new Exception("Email sudah terdaftar. Gunakan email lain.");
         }
 
         // 4. Persiapan Data User Baru
         User newUser = new User();
         newUser.nama_lengkap = nama;
-        newUser.email = resolvedEmail;
+        newUser.email = email; // Langsung pakai email asli dari input
         newUser.password_hash = BcryptUtil.bcryptHash(password);
         newUser.nik = nik;
         newUser.no_hp = nohp;

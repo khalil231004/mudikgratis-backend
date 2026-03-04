@@ -22,7 +22,6 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 
-
 @Path("/api/auth")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
@@ -52,7 +51,7 @@ public class AuthResource {
     // DTO Classes
     public static class RegisterRequest {
         @JsonProperty("nama_lengkap") public String nama_lengkap;
-        public String email;           // opsional — boleh null/kosong
+        public String email;
         public String password;
         public String nik;
         @JsonProperty("no_hp") public String no_hp;
@@ -92,13 +91,13 @@ public class AuthResource {
                 return Response.status(403).entity(Map.of(
                         "error", portalCfg.pesan_register_tutup != null
                                 ? portalCfg.pesan_register_tutup
-                                : "Pendaftaran akun baru ditutup.",
+                                : "Registrasi akun baru ditutup.",
                         "portal_type", "REGISTER_TUTUP"
                 )).build();
             }
             // ── END PORTAL CHECK ─────────────────────────────────────
 
-            // Register user — email boleh null, akan di-generate dari NIK
+            // Register user
             User userBaru = authService.registerUser(
                     req.nama_lengkap, req.email, req.password,
                     req.nik, req.no_hp, req.jenis_kelamin
@@ -116,7 +115,7 @@ public class AuthResource {
 
             return Response.ok(Map.of(
                     "status", "REGISTER_SUKSES",
-                    "pesan", "Akun berhasil dibuat b!",
+                    "pesan", "Akun berhasil dibuat!",
                     "token", token,
                     "role", userBaru.role,
                     "nama", userBaru.nama_lengkap
