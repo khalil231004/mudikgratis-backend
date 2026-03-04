@@ -30,7 +30,7 @@ public class CorsFilter implements ContainerRequestFilter, ContainerResponseFilt
 
     private static final Set<String> ALLOWED_ORIGINS = Set.of(
             "https://seulamat.dishubaceh.com",
-            "https://mudik.dishubaceh.com"
+            "https://back.dishubaceh.com"
     );
     private static final String ALLOW_HDR = "origin,content-type,accept,authorization,userid,x-requested-with";
     private static final String ALLOW_MTD = "GET,POST,PUT,DELETE,OPTIONS,HEAD,PATCH";
