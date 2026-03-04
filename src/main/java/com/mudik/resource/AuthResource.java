@@ -34,7 +34,7 @@ public class AuthResource {
     @ConfigProperty(name = "app.base.url", defaultValue = "https://dishubosrm.acehprov.go.id")
     String baseUrl;
 
-    // DTO Classes
+    // DTO Register — tanpa email
     public static class RegisterRequest {
         @JsonProperty("nama_lengkap") public String nama_lengkap;
         public String password;
@@ -43,8 +43,15 @@ public class AuthResource {
         @JsonProperty("jenis_kelamin") public String jenis_kelamin;
     }
 
+    /**
+     * DTO Login fleksibel:
+     * - User biasa  → kirim field "nik" + "password"
+     * - Admin       → kirim field "email" + "password"
+     * Backend akan otomatis deteksi mana yang terisi.
+     */
     public static class LoginRequest {
-        public String nik;
+        public String nik;      // untuk user biasa
+        public String email;    // untuk admin (login lama pakai email)
         public String password;
     }
 
@@ -54,7 +61,7 @@ public class AuthResource {
     }
 
     // ==========================================
-    // 1. REGISTER — Status langsung AKTIF (tanpa verifikasi email)
+    // 1. REGISTER — Status langsung AKTIF
     // ==========================================
     @POST
     @Path("/register")
@@ -82,13 +89,12 @@ public class AuthResource {
             }
             // ── END PORTAL CHECK ────────────────────────────────────
 
-            // Buat user baru — langsung AKTIF, tanpa kirim email
             User userBaru = authService.registerUser(
                     req.nama_lengkap, req.password,
                     req.nik, req.no_hp, req.jenis_kelamin
             );
 
-            userBaru.status_akun = "AKTIF";
+            // Sudah AKTIF dari registerUser, pastikan token null
             userBaru.verification_token = null;
             userBaru.persist();
 
@@ -103,14 +109,23 @@ public class AuthResource {
     }
 
     // ==========================================
-    // 2. LOGIN — Menggunakan NIK + password
+    // 2. LOGIN — Support NIK (user) dan Email (admin)
     // ==========================================
     @POST
     @Path("/login")
     @PermitAll
     public Response login(LoginRequest req) {
         try {
-            User user = authService.loginUser(req.nik, req.password);
+            // Tentukan identifier: gunakan email jika ada, fallback ke nik
+            String identifier = (req.email != null && !req.email.isBlank())
+                    ? req.email
+                    : req.nik;
+
+            if (identifier == null || identifier.isBlank()) {
+                return Response.status(400).entity(Map.of("error", "NIK atau Email wajib diisi.")).build();
+            }
+
+            User user = authService.loginUser(identifier, req.password);
 
             if ("BANNED".equals(user.status_akun)) {
                 return Response.status(403).entity(Map.of(
@@ -118,9 +133,12 @@ public class AuthResource {
                 )).build();
             }
 
+            // Gunakan NIK sebagai upn jika ada, fallback ke email
+            String upn = (user.nik != null && !user.nik.isBlank()) ? user.nik : user.email;
+
             SecretKey kunci = new SecretKeySpec(jwtSecret.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
             String token = Jwt.issuer(baseUrl)
-                    .upn(user.nik)
+                    .upn(upn)
                     .groups(new HashSet<>(List.of(user.role)))
                     .claim("id_user", user.user_id)
                     .claim("nama", user.nama_lengkap)
@@ -140,7 +158,7 @@ public class AuthResource {
     }
 
     // ==========================================
-    // 3. EKSEKUSI RESET PASSWORD (via token dari admin)
+    // 3. EKSEKUSI RESET PASSWORD
     // ==========================================
     @POST
     @Path("/reset-password")
