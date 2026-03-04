@@ -15,10 +15,7 @@ import java.util.Optional;
  *
  * Alur:
  *  1. getToken()   → POST /Api/Auth → dapat JWT
- *  2. kirimPesan() → POST /Api/WhatsApp/KirimPesan + Bearer token
- *
- * Method lama generateLink() / generateKuotaPenuhLink() tetap ada sebagai
- * wrapper agar tidak ada compile error di PendaftaranService & AdminResource.
+ *  2. kirimPesan() → POST /service_name/WhatsApp/KirimPesan + Bearer token
  */
 @ApplicationScoped
 public class WhatsAppService {
@@ -30,7 +27,10 @@ public class WhatsAppService {
     @ConfigProperty(name = "sapa.api.auth.url", defaultValue = "https://sapa.acehprov.go.id/Api/Auth")
     String sapaAuthUrl;
 
-    @ConfigProperty(name = "sapa.api.kirim.url", defaultValue = "https://sapa.acehprov.go.id/Api/WhatsApp/KirimPesan")
+    // ⚠️ FIX: URL KirimPesan harus pakai service_name sesuai akun SAPA
+    // Format: Base_url/service_name/WhatsApp/KirimPesan
+    // Ganti "MudikDishub" dengan service_name akun SAPA yang sebenarnya
+    @ConfigProperty(name = "sapa.api.kirim.url", defaultValue = "https://sapa.acehprov.go.id/MudikDishub/WhatsApp/KirimPesan")
     String sapaKirimUrl;
 
     @ConfigProperty(name = "sapa.api.email", defaultValue = "selamataceh@dishub.com")
@@ -41,43 +41,47 @@ public class WhatsAppService {
 
     private final HttpClient httpClient = HttpClient.newHttpClient();
 
-    // ── DEBUG MODE: false di production, set true kalau mau trace log ────────
-    private static final boolean DEBUG = false;
+    // ── FIX #1: DEBUG = true agar selalu ada log di server untuk diagnosa ──
+    private static final boolean DEBUG = true;
 
     // =========================================================================
     // PUBLIC: sendMessage — pengganti generateLink()
     // =========================================================================
 
     public String sendMessage(String noHp, String tipe, PendaftaranMudik p, String alasan) {
-        if (DEBUG) {
-            System.out.println("========== SAPA WA BLAST ==========");
-            System.out.println("No HP: " + noHp);
-            System.out.println("Tipe : " + tipe);
-            System.out.println("Nama : " + (p != null ? p.nama_peserta : "null"));
-        }
+        System.out.println("========== SAPA WA BLAST ==========");
+        System.out.println("[WA] No HP Input : " + noHp);
+        System.out.println("[WA] Tipe        : " + tipe);
+        System.out.println("[WA] Nama        : " + (p != null ? p.nama_peserta : "null"));
+        System.out.println("[WA] Auth URL    : " + sapaAuthUrl);
+        System.out.println("[WA] Kirim URL   : " + sapaKirimUrl);
+        System.out.println("[WA] Email used  : " + sapaEmail);
 
-        if (noHp == null || noHp.length() < 7) {
+        if (noHp == null || noHp.trim().length() < 7) {
             System.out.println("[WA] Skip: nomor tidak valid (" + noHp + ")");
             return "SKIP: nomor tidak valid";
         }
 
         String noHpClean = formatNoHp(noHp);
-        String pesan     = buildPesan(tipe, p, alasan);
+        System.out.println("[WA] No HP Clean : " + noHpClean);
+
+        String pesan = buildPesan(tipe, p, alasan);
 
         try {
             String token = getToken();
             return kirimPesan(token, noHpClean, pesan);
         } catch (Exception e) {
             System.err.println("[WA] ERROR sendMessage: " + e.getMessage());
+            e.printStackTrace();
             return "ERROR: " + e.getMessage();
         }
     }
 
     public String sendKuotaPenuh(String noHp, String namaPeserta, String namaRute) {
-        if (noHp == null || noHp.length() < 7) return "SKIP: nomor tidak valid";
+        if (noHp == null || noHp.trim().length() < 7) return "SKIP: nomor tidak valid";
 
         String noHpClean = formatNoHp(noHp);
-        String hotline   = "📞 *Hotline:* 08217653093";
+        String hotline = "📞 *Hotline:* 08217653093";
         String pesan =
                 "👋 *Salam Seulamat dari Dishub Aceh*\n\n" +
                         "Yth. Sdr/i *" + namaPeserta + "*,\n" +
@@ -91,6 +95,7 @@ public class WhatsAppService {
             return kirimPesan(token, noHpClean, pesan);
         } catch (Exception e) {
             System.err.println("[WA] ERROR sendKuotaPenuh: " + e.getMessage());
+            e.printStackTrace();
             return "ERROR: " + e.getMessage();
         }
     }
@@ -117,7 +122,16 @@ public class WhatsAppService {
 
     private String formatNoHp(String noHp) {
         String clean = noHp.replaceAll("[^0-9]", "");
-        if (clean.startsWith("0")) clean = "62" + clean.substring(1);
+        // ⚠️ FIX #4: SAPA terima format 08xx (bukan 628xx)
+        // Normalisasi ke format 08xx
+        if (clean.startsWith("62")) {
+            clean = "0" + clean.substring(2); // 6281x → 081x
+        }
+        // Jika sudah 08xx, biarkan
+        // Jika mulai 8xx tanpa 0, tambah 0
+        if (!clean.startsWith("0")) {
+            clean = "0" + clean;
+        }
         return clean;
     }
 
@@ -129,7 +143,6 @@ public class WhatsAppService {
 
         switch (tipe) {
             case "TOLAK_DATA":
-                // Batas perbaikan 1 jam DIHAPUS atas permintaan klien
                 String alasanFinal = (alasan != null && !alasan.isBlank()) ? alasan : "Data belum lengkap.";
                 return "👋 *Salam Seulamat dari Dishub Aceh*\n\n" +
                         "Yth. Sdr/i *" + nama + "*,\n" +
@@ -166,44 +179,60 @@ public class WhatsAppService {
     private String getToken() throws Exception {
         String authBody = "{\"email\":\"" + sapaEmail + "\",\"password\":\"" + sapaPassword + "\"}";
 
+        System.out.println("[SAPA Auth] Requesting token dari: " + sapaAuthUrl);
+        System.out.println("[SAPA Auth] Body: " + authBody);
+
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(sapaAuthUrl))
                 .header("Content-Type", "application/json")
+                .header("Accept", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(authBody))
                 .build();
 
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
-        if (DEBUG) {
-            System.out.println("[SAPA Auth] Status: " + response.statusCode());
-            System.out.println("[SAPA Auth] Body  : " + response.body());
-        }
+        System.out.println("[SAPA Auth] Status: " + response.statusCode());
+        System.out.println("[SAPA Auth] Body  : " + response.body());
 
         if (response.statusCode() != 200) {
-            throw new RuntimeException("SAPA Auth gagal: HTTP " + response.statusCode());
+            throw new RuntimeException("SAPA Auth gagal: HTTP " + response.statusCode() + " | " + response.body());
         }
 
-        // Parse token dari JSON: {"status":"success","token":"eyJ..."}
+        // ⚠️ FIX #3: Parse token lebih robust
+        // Response bisa: {"status":"success","token":"eyJ..."}
+        // atau:          {"status":true,"data":{"token":"eyJ..."}}
         String body = response.body();
-        int tokenStart = body.indexOf("\"token\":");
-        if (tokenStart < 0) throw new RuntimeException("Token tidak ditemukan di response SAPA Auth");
 
-        int q1 = body.indexOf("\"", tokenStart + 8);
-        int q2 = body.indexOf("\"", q1 + 1);
-        String token = body.substring(q1 + 1, q2);
+        // Coba parse "token" langsung di root
+        String token = extractJsonString(body, "token");
 
-        if (DEBUG) System.out.println("[SAPA Auth] Token OK (length=" + token.length() + ")");
+        // Fallback: coba "access_token"
+        if (token == null || token.isEmpty()) {
+            token = extractJsonString(body, "access_token");
+        }
+
+        if (token == null || token.isEmpty()) {
+            throw new RuntimeException("Token tidak ditemukan di response SAPA Auth. Response: " + body);
+        }
+
+        System.out.println("[SAPA Auth] Token OK (length=" + token.length() + ")");
         return token;
     }
 
     private String kirimPesan(String token, String noHp, String pesan) throws Exception {
+        // FIX: Escape JSON dengan benar
         String pesanEscaped = pesan
                 .replace("\\", "\\\\")
                 .replace("\"", "\\\"")
                 .replace("\n", "\\n")
-                .replace("\r", "");
+                .replace("\r", "")
+                .replace("\t", "\\t");
 
         String kirimBody = "{\"no_hp\":\"" + noHp + "\",\"pesan\":\"" + pesanEscaped + "\"}";
+
+        System.out.println("[SAPA Kirim] URL  : " + sapaKirimUrl);
+        System.out.println("[SAPA Kirim] NoHP : " + noHp);
+        System.out.println("[SAPA Kirim] Body : " + kirimBody.substring(0, Math.min(kirimBody.length(), 200)) + "...");
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(sapaKirimUrl))
@@ -215,17 +244,44 @@ public class WhatsAppService {
 
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
-        if (DEBUG) {
-            System.out.println("[SAPA Kirim] Status: " + response.statusCode());
-            System.out.println("[SAPA Kirim] Body  : " + response.body());
-        }
+        System.out.println("[SAPA Kirim] Status: " + response.statusCode());
+        System.out.println("[SAPA Kirim] Body  : " + response.body());
 
         if (response.statusCode() == 200) {
-            System.out.println("[WA] Terkirim → " + noHp);
+            System.out.println("[WA] ✅ Terkirim → " + noHp);
             return "OK";
         } else {
-            System.err.println("[WA] Gagal → " + noHp + " | HTTP " + response.statusCode());
+            System.err.println("[WA] ❌ Gagal → " + noHp + " | HTTP " + response.statusCode());
             return "ERROR: HTTP " + response.statusCode() + " - " + response.body();
         }
+    }
+
+    /**
+     * Helper: ekstrak nilai string dari JSON key tertentu.
+     * Menangani format: "key":"value" di mana pun posisinya.
+     */
+    private String extractJsonString(String json, String key) {
+        String search = "\"" + key + "\"";
+        int keyIdx = json.indexOf(search);
+        if (keyIdx < 0) return null;
+
+        int colonIdx = json.indexOf(":", keyIdx + search.length());
+        if (colonIdx < 0) return null;
+
+        // Skip whitespace setelah ':'
+        int valStart = colonIdx + 1;
+        while (valStart < json.length() && Character.isWhitespace(json.charAt(valStart))) valStart++;
+
+        if (valStart >= json.length()) return null;
+
+        if (json.charAt(valStart) == '"') {
+            // String value
+            int q1 = valStart;
+            int q2 = json.indexOf("\"", q1 + 1);
+            if (q2 < 0) return null;
+            return json.substring(q1 + 1, q2);
+        }
+
+        return null;
     }
 }
