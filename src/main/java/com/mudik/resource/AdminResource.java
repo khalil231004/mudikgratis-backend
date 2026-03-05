@@ -529,8 +529,10 @@ public class AdminResource {
     }
 
     // ================================================================
-    // 8. TAMBAH PENUMPANG OLEH ADMIN
-    //    Masuk sebagai MENUNGGU VERIFIKASI → tidak sentuh kuota
+    // 8. TAMBAH PENUMPANG GO SHOW OLEH ADMIN
+    //    - user_id WAJIB (Go Show harus terkait akun)
+    //    - Mendukung jenis_identitas dan foto_identitas_path
+    //    - Masuk sebagai MENUNGGU VERIFIKASI → tidak sentuh kuota
     // ================================================================
     @POST
     @Path("/tambah-penumpang")
@@ -538,50 +540,77 @@ public class AdminResource {
     @Transactional
     public Response tambahPenumpangAdmin(Map<String, Object> body) {
         try {
+            // ── Parsing parameter ──────────────────────────────────────
             Long ruteId      = body.get("rute_id")      != null ? Long.parseLong(body.get("rute_id").toString())      : null;
             Long kendaraanId = body.get("kendaraan_id") != null ? Long.parseLong(body.get("kendaraan_id").toString()) : null;
+            Long userAkunId  = body.get("user_id")      != null ? Long.parseLong(body.get("user_id").toString())      : null;
+
             String namaPeserta     = (String) body.get("nama_peserta");
             String nikPeserta      = (String) body.get("nik_peserta");
-            String jenisKelamin    = (String) body.getOrDefault("jenis_kelamin", "L");
+            String jenisKelamin    = (String) body.getOrDefault("jenis_kelamin", "LAKI-LAKI");
             String tanggalLahirStr = (String) body.get("tanggal_lahir");
             String alamat          = (String) body.getOrDefault("alamat_rumah", "-");
             String noHp            = (String) body.get("no_hp_peserta");
-            Long   userAkunId      = body.get("user_id") != null ? Long.parseLong(body.get("user_id").toString()) : null;
+            String jenisIdentitas  = (String) body.getOrDefault("jenis_identitas", "KTP");
+            String fotoPath        = (String) body.get("foto_identitas_path");
 
-            if (ruteId == null || namaPeserta == null || nikPeserta == null)
-                return Response.status(400).entity(Map.of("error", "rute_id, nama_peserta, nik_peserta wajib diisi")).build();
+            // ── Validasi wajib ─────────────────────────────────────────
+            if (ruteId == null)
+                return Response.status(400).entity(Map.of("error", "rute_id wajib diisi")).build();
+            if (namaPeserta == null || namaPeserta.isBlank())
+                return Response.status(400).entity(Map.of("error", "nama_peserta wajib diisi")).build();
+            if (nikPeserta == null || nikPeserta.trim().length() != 16)
+                return Response.status(400).entity(Map.of("error", "nik_peserta harus 16 digit (NIK: " + (nikPeserta != null ? nikPeserta : "-") + ")")).build();
 
+            // ── user_id WAJIB untuk Go Show ────────────────────────────
+            if (userAkunId == null)
+                return Response.status(400).entity(Map.of("error", "user_id wajib diisi. Penumpang Go Show harus dikaitkan ke akun user yang terdaftar.")).build();
+
+            com.mudik.model.User userAkun = com.mudik.model.User.findById(userAkunId);
+            if (userAkun == null)
+                return Response.status(404).entity(Map.of("error", "Akun user dengan ID " + userAkunId + " tidak ditemukan")).build();
+
+            // ── Cek rute ───────────────────────────────────────────────
             com.mudik.model.Rute rute = com.mudik.model.Rute.findById(ruteId);
-            if (rute == null) return Response.status(404).entity(Map.of("error", "Rute tidak ditemukan")).build();
+            if (rute == null)
+                return Response.status(404).entity(Map.of("error", "Rute tidak ditemukan")).build();
 
+            // ── Cek duplikasi NIK (aktif) ──────────────────────────────
             long cekNik = com.mudik.model.PendaftaranMudik.count(
-                    "nik_peserta = ?1 AND status_pendaftaran NOT IN ('DIBATALKAN', 'DITOLAK')", nikPeserta.trim());
-            if (cekNik > 0) return Response.status(400).entity(Map.of("error", "NIK sudah terdaftar: " + nikPeserta)).build();
+                    "nik_peserta = ?1 AND status_pendaftaran NOT IN ('DIBATALKAN', 'DITOLAK')",
+                    nikPeserta.trim());
+            if (cekNik > 0)
+                return Response.status(400).entity(Map.of("error", "NIK " + nikPeserta + " sudah terdaftar aktif di sistem")).build();
 
+            // ── Buat record pendaftaran ────────────────────────────────
             com.mudik.model.PendaftaranMudik p = new com.mudik.model.PendaftaranMudik();
-            p.rute          = rute;
-            p.nama_peserta  = namaPeserta.toUpperCase();
-            p.nik_peserta   = nikPeserta.trim();
-            p.jenis_kelamin = jenisKelamin;
-            p.alamat_rumah  = alamat;
-            p.no_hp_peserta = noHp;
-            p.kode_booking  = "ADM-" + System.currentTimeMillis();
-            p.uuid          = java.util.UUID.randomUUID().toString();
+            p.rute           = rute;
+            p.user           = userAkun;
+            p.nama_peserta   = namaPeserta.trim().toUpperCase();
+            p.nik_peserta    = nikPeserta.trim();
+            p.jenis_kelamin  = jenisKelamin;
+            p.alamat_rumah   = (alamat != null && !alamat.isBlank()) ? alamat : "-";
+            p.no_hp_peserta  = (noHp != null && !noHp.isBlank()) ? noHp : null;
+            p.jenis_identitas = jenisIdentitas;
+            p.foto_identitas_path = fotoPath;
+            p.kode_booking   = "GOSHOW-" + System.currentTimeMillis();
+            p.uuid           = java.util.UUID.randomUUID().toString();
 
+            // ── Hitung umur & kategori ─────────────────────────────────
             if (tanggalLahirStr != null && !tanggalLahirStr.isBlank()) {
                 try {
                     java.time.LocalDate tgl = java.time.LocalDate.parse(tanggalLahirStr);
                     p.tanggal_lahir = tgl;
                     int umur = java.time.Period.between(tgl, java.time.LocalDate.now()).getYears();
                     p.kategori_penumpang = umur < 2 ? "BAYI" : (umur < 17 ? "ANAK" : "DEWASA");
-                } catch (Exception e2) { p.kategori_penumpang = "DEWASA"; }
-            } else { p.kategori_penumpang = "DEWASA"; }
-
-            if (userAkunId != null) {
-                com.mudik.model.User user = com.mudik.model.User.findById(userAkunId);
-                if (user != null) p.user = user;
+                } catch (Exception ignored) {
+                    p.kategori_penumpang = "DEWASA";
+                }
+            } else {
+                p.kategori_penumpang = "DEWASA";
             }
 
+            // ── Assign kendaraan (opsional) ────────────────────────────
             if (kendaraanId != null) {
                 com.mudik.model.Kendaraan bus = com.mudik.model.Kendaraan.findById(kendaraanId);
                 if (bus != null) {
@@ -592,14 +621,21 @@ public class AdminResource {
                 }
             }
 
-            // MENUNGGU VERIFIKASI → tidak sentuh kuota_terisi sama sekali
+            // ── Status awal: MENUNGGU VERIFIKASI (tidak sentuh kuota) ──
             p.status_pendaftaran = "MENUNGGU VERIFIKASI";
             p.persist();
 
-            return Response.ok(Map.of("status", "BERHASIL", "pesan", "Penumpang " + namaPeserta + " berhasil ditambahkan")).build();
+            return Response.ok(Map.of(
+                    "status",  "BERHASIL",
+                    "pesan",   "Penumpang " + p.nama_peserta + " (Go Show) berhasil didaftarkan",
+                    "pendaftaran_id", p.pendaftaran_id,
+                    "kode_booking",   p.kode_booking,
+                    "kategori",       p.kategori_penumpang
+            )).build();
+
         } catch (Exception e) {
             e.printStackTrace();
-            return Response.status(400).entity(Map.of("error", e.getMessage())).build();
+            return Response.status(400).entity(Map.of("error", e.getMessage() != null ? e.getMessage() : "Internal error")).build();
         }
     }
 
