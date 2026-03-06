@@ -457,6 +457,8 @@ public class PendaftaranService {
             m.put("foto_bukti", (p.foto_identitas_path != null && !p.foto_identitas_path.isBlank())
                     ? "/uploads/" + new File(p.foto_identitas_path).getName() : null);
             m.put("created_at", p.created_at != null ? p.created_at.toString() : null);
+            m.put("link_konfirmasi_dikirim", p.link_konfirmasi_dikirim);
+            m.put("konfirmasi_kirim_count",  p.konfirmasi_kirim_count);
             mapped.add(m);
         }
 

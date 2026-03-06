@@ -420,6 +420,72 @@ public class AdminResource {
     }
 
     // ================================================================
+    // 4c-2. KIRIM LINK KONFIRMASI SEMUA H-3 (1 klik, semua keluarga)
+    //       Loop semua keluarga DITERIMA H-3, kirim via SAPA satu per satu.
+    //       Increment konfirmasi_kirim_count per keluarga.
+    // ================================================================
+    @POST
+    @Path("/kirim-konfirmasi-semua-h3")
+    @Transactional
+    public Response kirimKonfirmasiSemuaH3() {
+        try {
+            // Ambil semua user_id unik yang punya peserta DITERIMA H-3
+            List<PendaftaranMudik> semuaH3 = PendaftaranMudik.list(
+                    "status_pendaftaran = 'DITERIMA H-3'");
+
+            if (semuaH3.isEmpty())
+                return Response.ok(Map.of(
+                        "status", "OK",
+                        "pesan", "Tidak ada peserta berstatus DITERIMA H-3.",
+                        "sukses", 0, "gagal", 0, "total", 0
+                )).build();
+
+            // Group by user_id (kepala keluarga)
+            Map<Long, List<PendaftaranMudik>> grouped = new java.util.LinkedHashMap<>();
+            for (PendaftaranMudik p : semuaH3) {
+                Long uid = p.user != null ? p.user.user_id : p.pendaftaran_id;
+                grouped.computeIfAbsent(uid, k -> new java.util.ArrayList<>()).add(p);
+            }
+
+            int sukses = 0, gagal = 0;
+
+            for (Map.Entry<Long, List<PendaftaranMudik>> entry : grouped.entrySet()) {
+                List<PendaftaranMudik> keluarga = entry.getValue();
+                PendaftaranMudik wakil = keluarga.get(0);
+                String hp = (wakil.no_hp_peserta != null && wakil.no_hp_peserta.length() > 5)
+                        ? wakil.no_hp_peserta : (wakil.user != null ? wakil.user.no_hp : "");
+
+                // Increment counter + tandai sudah dikirim
+                for (PendaftaranMudik p : keluarga) {
+                    p.link_konfirmasi_dikirim = true;
+                    p.konfirmasi_kirim_count  = (p.konfirmasi_kirim_count > 0 ? p.konfirmasi_kirim_count : 0) + 1;
+                    p.persist();
+                }
+
+                // Kirim via SAPA
+                try {
+                    String waResult = waService.sendMessage(hp, "DITERIMA(H-3)", wakil, null);
+                    if ("OK".equals(waResult)) sukses++;
+                    else gagal++;
+                } catch (Exception ex) {
+                    gagal++;
+                }
+            }
+
+            return Response.ok(Map.of(
+                    "status", "OK",
+                    "pesan", "Pengiriman selesai. Berhasil: " + sukses + ", Gagal/SAPA offline: " + gagal + " dari total " + grouped.size() + " keluarga.",
+                    "sukses", sukses,
+                    "gagal", gagal,
+                    "total", grouped.size()
+            )).build();
+
+        } catch (Exception e) {
+            return Response.status(500).entity(Map.of("error", e.getMessage())).build();
+        }
+    }
+
+    // ================================================================
     // 4d. KIRIM WA BLAST — endpoint generik untuk semua tipe blast
     //     POST /api/admin/kirim-wa/{tipe}/{userId}
     //     tipe: wa_verif | wa_h3 | wa_tiket | wa_batal

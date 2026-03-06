@@ -169,13 +169,10 @@ public class WhatsAppService {
             case "WA_TIKET":
                 String namaBus   = (p != null && p.kendaraan != null && p.kendaraan.nama_armada != null)
                         ? p.kendaraan.nama_armada : "akan diinformasikan";
-                String platNomor = (p != null && p.kendaraan != null && p.kendaraan.plat_nomor != null)
-                        ? p.kendaraan.plat_nomor : "-";
                 return "🎫 *INFORMASI TIKET MUDIK GRATIS* 🎫\n\n" +
                         "Yth. Sdr/i *" + nama + "*,\n" +
                         "Selamat! Rombongan Anda telah ditetapkan di armada berikut:\n\n" +
                         "🚌 *Armada:* " + namaBus + "\n" +
-                        "🚗 *Plat Nomor:* " + platNomor + "\n" +
                         "📍 *Rute:* Banda Aceh → " + ruteStr + "\n\n" +
                         "Silakan lihat detail tiket dan lokasi keberangkatan di aplikasi Seulamat:\n" +
                         baseUrl + "/dashboard\n\n" +
@@ -202,19 +199,9 @@ public class WhatsAppService {
     // =========================================================================
 
     private String kirimViaSapa(String noHp, String pesan) {
-        try {
-            String token = getToken();
-            return kirimPesan(token, noHp, pesan);
-        } catch (Exception e) {
-            String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            if (msg.startsWith("SAPA_AUTH_ERROR") || msg.contains("Auth gagal") || msg.contains("Token tidak ditemukan")) {
-                System.err.println("[WA] SAPA Auth gagal: " + msg);
-                return "SAPA_AUTH_ERROR: " + msg;
-            }
-            // Network/timeout/connection — sinyal ke frontend untuk fallback wa.me
-            System.err.println("[WA] SAPA tidak terhubung: " + msg);
-            return "SAPA_OFFLINE: " + msg;
-        }
+        // SAPA dihentikan sementara - langsung return offline agar frontend fallback ke WA manual
+        System.out.println("[WA] SAPA dinonaktifkan. Fallback ke WA manual untuk: " + noHp);
+        return "SAPA_OFFLINE: layanan dihentikan";
     }
 
     private String getToken() throws Exception {
