@@ -59,6 +59,12 @@ public class PendaftaranMudik extends PanacheEntityBase {
     @Column(name = "link_konfirmasi_dikirim", nullable = false, columnDefinition = "boolean DEFAULT false")
     public boolean link_konfirmasi_dikirim = false;
 
+    // ── JUMLAH PENGIRIMAN LINK KONFIRMASI OLEH ADMIN ─────────────────────────
+    // Bertambah setiap kali admin mengklik "Kirim Link Konfirmasi" untuk keluarga ini.
+    // Ditampilkan di kolom Plotting Bus sebagai badge jumlah klik.
+    @Column(name = "konfirmasi_kirim_count", nullable = false, columnDefinition = "integer DEFAULT 0")
+    public int konfirmasi_kirim_count = 0;
+
     // ── LOCK KELUARGA ─────────────────────────────────────────────
     // Diset true jika salah satu anggota keluarga (1 akun) ditolak.
     // Anggota lain tidak bisa berubah status sampai masalah diselesaikan.

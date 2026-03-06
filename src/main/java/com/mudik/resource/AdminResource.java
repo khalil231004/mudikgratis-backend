@@ -103,6 +103,8 @@ public class AdminResource {
             String hp = (p.no_hp_peserta != null && p.no_hp_peserta.length() > 5) ? p.no_hp_peserta : (p.user != null ? p.user.no_hp : "");
             map.put("no_hp_target", hp);
             if (p.foto_identitas_path != null) map.put("foto_bukti", "/uploads/" + new File(p.foto_identitas_path).getName());
+            map.put("link_konfirmasi_dikirim", p.link_konfirmasi_dikirim);
+            map.put("konfirmasi_kirim_count", p.konfirmasi_kirim_count);
             // SAPA Blast: pesan dikirim otomatis dari backend, link tidak diperlukan frontend
             map.put("link_wa_terima", "");
             map.put("link_wa_tolak",  "");
@@ -314,6 +316,8 @@ public class AdminResource {
 
     // ================================================================
     // 4c. KIRIM LINK KONFIRMASI
+    //     Setiap klik admin akan increment konfirmasi_kirim_count.
+    //     Count ini ditampilkan di kolom Plotting Bus sebagai badge.
     // ================================================================
     @POST
     @Path("/kirim-link-konfirmasi/{userId}")
@@ -328,17 +332,86 @@ public class AdminResource {
             PendaftaranMudik wakil = keluarga.get(0);
             String hp = (wakil.no_hp_peserta != null && wakil.no_hp_peserta.length() > 5)
                     ? wakil.no_hp_peserta : (wakil.user != null ? wakil.user.no_hp : "");
-            for (PendaftaranMudik p : keluarga) { p.link_konfirmasi_dikirim = true; p.persist(); }
+
+            // Tandai sudah dikirim + increment counter setiap klik admin
+            for (PendaftaranMudik p : keluarga) {
+                p.link_konfirmasi_dikirim = true;
+                p.konfirmasi_kirim_count  = (p.konfirmasi_kirim_count > 0 ? p.konfirmasi_kirim_count : 0) + 1;
+                p.persist();
+            }
+
             // SAPA Blast: kirim pesan WA langsung dari server
             String waResult = waService.sendMessage(hp, "DITERIMA(H-3)", wakil, null);
+            boolean sapaOk  = "OK".equals(waResult);
+
+            int jumlahKirim = wakil.konfirmasi_kirim_count;
             return Response.ok(Map.of(
-                    "status", "BERHASIL",
-                    "pesan", "Pesan konfirmasi berhasil dikirim ke peserta via SAPA Blast.",
-                    "wa_result", waResult,
-                    "link_wa", "" // tidak diperlukan, pesan sudah dikirim otomatis
+                    "status",      "BERHASIL",
+                    "pesan",       sapaOk
+                            ? "Link konfirmasi berhasil dikirim via SAPA Blast. (Total kirim: " + jumlahKirim + "x)"
+                            : "SAPA tidak terhubung. Gunakan WA manual. (Total klik: " + jumlahKirim + "x)",
+                    "wa_result",   waResult,
+                    "sapa_ok",     sapaOk,
+                    "kirim_count", jumlahKirim,
+                    "link_wa",     ""
             )).build();
         } catch (Exception e) {
             return Response.status(400).entity(Map.of("error", e.getMessage())).build();
+        }
+    }
+
+    // ================================================================
+    // 4d. KIRIM WA BLAST — endpoint generik untuk semua tipe blast
+    //     POST /api/admin/kirim-wa/{tipe}/{userId}
+    //     tipe: wa_verif | wa_h3 | wa_tiket | wa_batal
+    //     Jika SAPA offline, frontend akan tampilkan fallback wa.me
+    // ================================================================
+    @POST
+    @Path("/kirim-wa/{tipe}/{userId}")
+    @Transactional
+    public Response kirimWaBlast(@PathParam("tipe") String tipe,
+                                 @PathParam("userId") Long userId) {
+        try {
+            // Ambil wakil keluarga (peserta pertama) untuk konteks pesan
+            List<PendaftaranMudik> keluarga = PendaftaranMudik.list(
+                    "user.user_id = ?1 ORDER BY pendaftaran_id ASC", userId);
+            if (keluarga.isEmpty())
+                return Response.status(404).entity(Map.of("error", "Data tidak ditemukan untuk userId=" + userId)).build();
+
+            PendaftaranMudik wakil = keluarga.get(0);
+            String hp = (wakil.no_hp_peserta != null && wakil.no_hp_peserta.length() > 5)
+                    ? wakil.no_hp_peserta : (wakil.user != null ? wakil.user.no_hp : null);
+
+            if (hp == null || hp.trim().length() < 7)
+                return Response.status(400).entity(Map.of("error", "Nomor HP tidak tersedia untuk keluarga ini.")).build();
+
+            String waResult = waService.sendBlast(hp, tipe.toUpperCase(), wakil);
+            boolean sapaOk  = "OK".equals(waResult);
+
+            if (sapaOk) {
+                return Response.ok(Map.of(
+                        "status",    "BERHASIL",
+                        "pesan",     "WA Blast (" + tipe.toUpperCase() + ") berhasil dikirim ke " + hp + " via SAPA.",
+                        "wa_result", waResult,
+                        "sapa_ok",   true
+                )).build();
+            } else {
+                // SAPA offline / error — kembalikan 200 tapi sapa_ok=false
+                // agar frontend tahu perlu fallback ke wa.me
+                String noHpFormatted = wakil.no_hp_peserta != null ? wakil.no_hp_peserta : (wakil.user != null ? wakil.user.no_hp : "");
+                return Response.ok(Map.of(
+                        "status",    "SAPA_GAGAL",
+                        "pesan",     "SAPA Blast gagal terhubung. Gunakan WA manual. Detail: " + waResult,
+                        "wa_result", waResult,
+                        "sapa_ok",   false,
+                        "no_hp",     noHpFormatted,
+                        "nama",      wakil.nama_peserta != null ? wakil.nama_peserta : "",
+                        "uuid",      wakil.uuid != null ? wakil.uuid : ""
+                )).build();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Response.status(500).entity(Map.of("error", e.getMessage() != null ? e.getMessage() : "Internal error")).build();
         }
     }
 
