@@ -271,24 +271,64 @@ public class AdminResource {
         if (first.rute != null && busBaru.rute != null && !first.rute.rute_id.equals(busBaru.rute.rute_id))
             return Response.status(400).entity(Map.of("error", "Bus tidak sesuai rute peserta.")).build();
 
-        if (busBaru.terisi + keluarga.size() > busBaru.kapasitas_total)
-            return Response.status(400).entity(Map.of("error", "Bus penuh! Sisa: " + (busBaru.kapasitas_total - busBaru.terisi))).build();
+        // Null-safe: pastikan terisi tidak null (data lama mungkin null)
+        if (busBaru.terisi == null) busBaru.terisi = 0;
+        if (busBaru.kapasitas_total == null) busBaru.kapasitas_total = 0;
 
+        // Hitung berapa peserta yang BENAR-BENAR akan ditambah ke bus ini
+        // (exclude peserta yang sudah di bus yang sama)
+        int akanDitambah = (int) keluarga.stream()
+                .filter(p -> p.kendaraan == null || !p.kendaraan.id.equals(busBaru.id))
+                .count();
+
+        if (akanDitambah == 0)
+            return Response.status(400).entity(Map.of("error", "Semua peserta sudah di-plotting ke bus ini.")).build();
+
+        int sisaKapasitas = busBaru.kapasitas_total - busBaru.terisi;
+        if (akanDitambah > sisaKapasitas)
+            return Response.status(400).entity(Map.of("error",
+                    "Bus tidak cukup! Sisa kursi: " + sisaKapasitas +
+                            " | Peserta yang akan masuk: " + akanDitambah)).build();
+
+        // Track bus-bus lama yang perlu decrement terisi-nya
+        // Kumpulkan dulu per bus agar decrement hanya sekali per bus
+        java.util.Map<Long, Integer> decrementPerBus = new java.util.LinkedHashMap<>();
+        for (PendaftaranMudik p : keluarga) {
+            if (p.kendaraan != null && !p.kendaraan.id.equals(busBaru.id)) {
+                decrementPerBus.merge(p.kendaraan.id, 1, Integer::sum);
+            }
+        }
+
+        // Terapkan decrement ke bus lama (satu kali per bus)
+        for (PendaftaranMudik p : keluarga) {
+            if (p.kendaraan != null && !p.kendaraan.id.equals(busBaru.id)) {
+                Integer jumlahKurang = decrementPerBus.remove(p.kendaraan.id);
+                if (jumlahKurang != null) {
+                    if (p.kendaraan.terisi == null) p.kendaraan.terisi = 0;
+                    p.kendaraan.terisi = Math.max(0, p.kendaraan.terisi - jumlahKurang);
+                    p.kendaraan.persist();
+                }
+            }
+        }
+
+        // Assign semua peserta ke bus baru
         int added = 0;
         for (PendaftaranMudik p : keluarga) {
             if (p.kendaraan != null && p.kendaraan.id.equals(busBaru.id)) continue;
-            if (p.kendaraan != null) {
-                p.kendaraan.terisi = Math.max(0, (p.kendaraan.terisi != null ? p.kendaraan.terisi : 0) - 1);
-                p.kendaraan.persist();
-            }
             p.kendaraan = busBaru;
-            busBaru.terisi += 1;
             added++;
             p.persist();
         }
-        if (added == 0) return Response.status(400).entity(Map.of("error", "Semua peserta sudah di-plotting ke bus ini.")).build();
+
+        // Increment terisi bus baru sekali saja
+        busBaru.terisi += added;
         busBaru.persist();
-        return Response.ok(Map.of("status", "BERHASIL", "pesan", "Keluarga masuk bus " + busBaru.nama_armada)).build();
+
+        return Response.ok(Map.of(
+                "status", "BERHASIL",
+                "pesan",  added + " peserta berhasil masuk bus " + busBaru.nama_armada,
+                "added",  added
+        )).build();
     }
 
     // ================================================================
@@ -302,16 +342,35 @@ public class AdminResource {
                 "user.user_id = ?1 AND kendaraan IS NOT NULL AND status_pendaftaran = 'TERVERIFIKASI/ SIAP BERANGKAT'", userId);
         if (keluarga.isEmpty()) return Response.status(400).entity(Map.of("error", "Tidak ada plotting aktif.")).build();
 
-        Map<Long, Kendaraan> buses = new java.util.LinkedHashMap<>();
-        for (PendaftaranMudik p : keluarga) if (p.kendaraan != null) buses.put(p.kendaraan.id, p.kendaraan);
+        // Hitung jumlah peserta per bus (aggregate) agar decrement tepat
+        java.util.Map<Long, Integer> pesertaPerBus = new java.util.LinkedHashMap<>();
+        java.util.Map<Long, Kendaraan> busMap     = new java.util.LinkedHashMap<>();
         for (PendaftaranMudik p : keluarga) {
-            if (p.kendaraan != null)
-                p.kendaraan.terisi = Math.max(0, (p.kendaraan.terisi != null ? p.kendaraan.terisi : 0) - 1);
+            if (p.kendaraan != null) {
+                pesertaPerBus.merge(p.kendaraan.id, 1, Integer::sum);
+                busMap.put(p.kendaraan.id, p.kendaraan);
+            }
+        }
+
+        // Lepas relasi kendaraan dari semua peserta
+        for (PendaftaranMudik p : keluarga) {
             p.kendaraan = null;
             p.persist();
         }
-        for (Kendaraan bus : buses.values()) bus.persist();
-        return Response.ok(Map.of("status", "BERHASIL", "pesan", "Plotting " + keluarga.size() + " peserta berhasil dibatalkan.")).build();
+
+        // Decrement terisi bus sekali per bus sesuai jumlah peserta yang dilepas
+        for (java.util.Map.Entry<Long, Kendaraan> entry : busMap.entrySet()) {
+            Kendaraan bus = entry.getValue();
+            int kurang    = pesertaPerBus.getOrDefault(entry.getKey(), 0);
+            if (bus.terisi == null) bus.terisi = 0;
+            bus.terisi = Math.max(0, bus.terisi - kurang);
+            bus.persist();
+        }
+
+        return Response.ok(Map.of(
+                "status", "BERHASIL",
+                "pesan",  "Plotting " + keluarga.size() + " peserta berhasil dibatalkan."
+        )).build();
     }
 
     // ================================================================
