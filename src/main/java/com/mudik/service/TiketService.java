@@ -49,8 +49,8 @@ public class TiketService {
         BaseFont bfBold = BaseFont.createFont(BaseFont.HELVETICA_BOLD, BaseFont.WINANSI, false);
 
         // ── LOAD LOGO ────────────────────────────────────────────────────────
-        Image logoDishub   = loadLogo("/logo-pancacita_dishub.png");
-        Image logoSeulamat = loadLogo("/Seulamat_Logo-04.png");
+        Image logoDishub   = loadLogo("/pancacita.png");
+        Image logoSeulamat = loadLogo("/seulamat.png");
 
         // ════════════════════════════════════════════════════════════════════
         //  1. HEADER: Logo kiri (Dishub) + Logo kanan (Seulamat)
