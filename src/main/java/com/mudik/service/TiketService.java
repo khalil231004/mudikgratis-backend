@@ -11,19 +11,20 @@ import jakarta.enterprise.context.ApplicationScoped;
 
 import java.awt.Color;
 import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 
 @ApplicationScoped
 public class TiketService {
 
     // ── Warna ──────────────────────────────────────────────────────────────
-    private static final Color BLUE_PRIMARY  = new Color(0x25, 0x63, 0xEB);
-    private static final Color BLUE_LABEL    = new Color(0x29, 0x78, 0xFF);
-    private static final Color WHITE         = Color.WHITE;
-    private static final Color SLATE_900     = new Color(0x0F, 0x17, 0x2A);
-    private static final Color SLATE_500     = new Color(0x64, 0x74, 0x8B);
-    private static final Color SLATE_200     = new Color(0xE2, 0xE8, 0xF0);
-    private static final Color BG_DARK       = new Color(0x05, 0x0D, 0x1F);
+    private static final Color BLUE_PRIMARY    = new Color(0x25, 0x63, 0xEB);
+    private static final Color BLUE_LABEL      = new Color(0x29, 0x78, 0xFF);
     private static final Color BLUE_LIGHT_TEXT = new Color(0x93, 0xC5, 0xFD);
+    private static final Color WHITE           = Color.WHITE;
+    private static final Color SLATE_900       = new Color(0x0F, 0x17, 0x2A);
+    private static final Color SLATE_500       = new Color(0x64, 0x74, 0x8B);
+    private static final Color SLATE_200       = new Color(0xE2, 0xE8, 0xF0);
+    private static final Color BG_DARK         = new Color(0x05, 0x0D, 0x1F);
 
     public byte[] cetakTiket(PendaftaranMudik pendaftar) throws Exception {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -33,35 +34,76 @@ public class TiketService {
         document.open();
 
         // ── DATA ────────────────────────────────────────────────────────────
-        String kode    = pendaftar.kode_booking != null ? pendaftar.kode_booking : "MDK-" + pendaftar.pendaftaran_id;
-        String nama    = pendaftar.nama_peserta  != null ? pendaftar.nama_peserta.toUpperCase() : "-";
-        String nik     = pendaftar.nik_peserta   != null ? pendaftar.nik_peserta  : "-";
-        String alamat  = pendaftar.alamat_rumah  != null ? pendaftar.alamat_rumah : "-";
-        String tgl     = pendaftar.rute != null ? pendaftar.rute.getFormattedDate() : "Jadwal Belum Rilis";
-        String rute    = pendaftar.rute != null
-                ? nvl(pendaftar.rute.asal) + " - " + nvl(pendaftar.rute.tujuan)
-                : "-";
-        String armada  = (pendaftar.kendaraan != null && pendaftar.kendaraan.nama_armada != null)
+        String kode   = pendaftar.kode_booking != null ? pendaftar.kode_booking : "MDK-" + pendaftar.pendaftaran_id;
+        String nama   = pendaftar.nama_peserta  != null ? pendaftar.nama_peserta.toUpperCase() : "-";
+        String nik    = pendaftar.nik_peserta   != null ? pendaftar.nik_peserta  : "-";
+        String alamat = pendaftar.alamat_rumah  != null ? pendaftar.alamat_rumah : "-";
+        String tgl    = pendaftar.rute != null ? pendaftar.rute.getFormattedDate() : "Jadwal Belum Rilis";
+        String rute   = pendaftar.rute != null
+                ? nvl(pendaftar.rute.asal) + " - " + nvl(pendaftar.rute.tujuan) : "-";
+        String armada = (pendaftar.kendaraan != null && pendaftar.kendaraan.nama_armada != null)
                 ? pendaftar.kendaraan.nama_armada : "-";
 
         // ── FONTS ────────────────────────────────────────────────────────────
         BaseFont bf     = BaseFont.createFont(BaseFont.HELVETICA,      BaseFont.WINANSI, false);
         BaseFont bfBold = BaseFont.createFont(BaseFont.HELVETICA_BOLD, BaseFont.WINANSI, false);
 
+        // ── LOAD LOGO ────────────────────────────────────────────────────────
+        Image logoDishub   = loadLogo("/logo-pancacita_dishub.png");
+        Image logoSeulamat = loadLogo("/Seulamat_Logo-04.png");
+
         // ════════════════════════════════════════════════════════════════════
-        //  1. HEADER: Logo kiri & kanan (background gelap)
+        //  1. HEADER: Logo kiri (Dishub) + Logo kanan (Seulamat)
         // ════════════════════════════════════════════════════════════════════
         PdfPTable tHeader = new PdfPTable(3);
         tHeader.setWidthPercentage(100);
-        tHeader.setWidths(new float[]{ 3f, 4f, 3f });
+        tHeader.setWidths(new float[]{ 3.5f, 2f, 3.5f });
         tHeader.setSpacingAfter(0f);
 
-        tHeader.addCell(makeHeaderCell(bf, bfBold, "DISHUB ACEH", "Pemerintah Aceh", Element.ALIGN_LEFT));
+        // Kiri: logo Dishub Aceh
+        PdfPCell cLeft = new PdfPCell();
+        cLeft.setBorder(Rectangle.NO_BORDER);
+        cLeft.setBackgroundColor(BG_DARK);
+        cLeft.setPaddingTop(10);
+        cLeft.setPaddingBottom(10);
+        cLeft.setPaddingLeft(4);
+        cLeft.setVerticalAlignment(Element.ALIGN_MIDDLE);
+        if (logoDishub != null) {
+            // logo dishub landscape 1502x430 → scale to height ~36pt
+            logoDishub.scaleToFit(160, 46);
+            cLeft.addElement(logoDishub);
+        } else {
+            cLeft.addElement(new Phrase("DISHUB ACEH", new Font(bfBold, 10, Font.NORMAL, WHITE)));
+        }
+        tHeader.addCell(cLeft);
+
+        // Tengah: kosong spacer
         PdfPCell cMid = new PdfPCell(new Phrase(" "));
         cMid.setBorder(Rectangle.NO_BORDER);
         cMid.setBackgroundColor(BG_DARK);
         tHeader.addCell(cMid);
-        tHeader.addCell(makeHeaderCell(bf, bfBold, "Mudik Gratis", "Pemerintah Aceh", Element.ALIGN_RIGHT));
+
+        // Kanan: logo Seulamat
+        PdfPCell cRight = new PdfPCell();
+        cRight.setBorder(Rectangle.NO_BORDER);
+        cRight.setBackgroundColor(BG_DARK);
+        cRight.setPaddingTop(10);
+        cRight.setPaddingBottom(10);
+        cRight.setPaddingRight(4);
+        cRight.setHorizontalAlignment(Element.ALIGN_RIGHT);
+        cRight.setVerticalAlignment(Element.ALIGN_MIDDLE);
+        if (logoSeulamat != null) {
+            // logo seulamat landscape 2000x823 → scale to height ~36pt
+            logoSeulamat.scaleToFit(120, 46);
+            logoSeulamat.setAlignment(Image.ALIGN_RIGHT);
+            cRight.addElement(logoSeulamat);
+        } else {
+            Paragraph pRight = new Paragraph("Seulamat", new Font(bfBold, 10, Font.NORMAL, WHITE));
+            pRight.setAlignment(Element.ALIGN_RIGHT);
+            cRight.addElement(pRight);
+        }
+        tHeader.addCell(cRight);
+
         document.add(tHeader);
 
         // ════════════════════════════════════════════════════════════════════
@@ -73,9 +115,9 @@ public class TiketService {
 
         Paragraph pJudul = new Paragraph();
         pJudul.setAlignment(Element.ALIGN_CENTER);
-        pJudul.add(new Chunk("E-TIKET\n",              new Font(bfBold, 56, Font.NORMAL, WHITE)));
-        pJudul.add(new Chunk("MUDIK GRATIS\n",         new Font(bfBold, 13, Font.NORMAL, BLUE_LIGHT_TEXT)));
-        pJudul.add(new Chunk("PEMERINTAH ACEH 2026",   new Font(bfBold, 13, Font.NORMAL, BLUE_LIGHT_TEXT)));
+        pJudul.add(new Chunk("E-TIKET\n",            new Font(bfBold, 56, Font.NORMAL, WHITE)));
+        pJudul.add(new Chunk("MUDIK GRATIS\n",        new Font(bfBold, 13, Font.NORMAL, BLUE_LIGHT_TEXT)));
+        pJudul.add(new Chunk("PEMERINTAH ACEH 2026", new Font(bfBold, 13, Font.NORMAL, BLUE_LIGHT_TEXT)));
 
         PdfPCell cJudul = new PdfPCell();
         cJudul.setBorder(Rectangle.NO_BORDER);
@@ -120,7 +162,6 @@ public class TiketService {
         tPeserta.setWidthPercentage(100);
         tPeserta.setWidths(new float[]{ 3f, 2f });
 
-        // Kolom kiri
         PdfPCell cKiri = new PdfPCell();
         cKiri.setBorder(Rectangle.NO_BORDER);
         cKiri.setBackgroundColor(WHITE);
@@ -135,7 +176,7 @@ public class TiketService {
         cKiri.addElement(makeField(bf, bfBold, "Alamat Domisili", alamat));
         tPeserta.addCell(cKiri);
 
-        // Kolom kanan: QR
+        // QR code
         String qrData = kode + ";" + nik + ";BUS:" + armada;
         Image qrImg = generateQRCodeImage(qrData, 200);
 
@@ -149,7 +190,6 @@ public class TiketService {
         cQrOuter.setPaddingBottom(10);
         cQrOuter.setPaddingLeft(4);
 
-        // Wrap QR dalam tabel ber-border biru
         PdfPTable tQr = new PdfPTable(1);
         tQr.setWidthPercentage(100);
         PdfPCell cQrInner = new PdfPCell(qrImg, true);
@@ -202,7 +242,7 @@ public class TiketService {
         tRute.addCell(cArmada);
         cCard.addElement(tRute);
 
-        // ── Garis putus-putus separator ────────────────────────────────────
+        // ── Separator ─────────────────────────────────────────────────────
         PdfPTable tSep = new PdfPTable(1);
         tSep.setWidthPercentage(100);
         PdfPCell cSep = new PdfPCell(new Phrase(" "));
@@ -215,10 +255,7 @@ public class TiketService {
         tSep.addCell(cSep);
         cCard.addElement(tSep);
 
-        // ── Catatan & nomor pengaduan ──────────────────────────────────────
-        PdfPTable tNote = new PdfPTable(1);
-        tNote.setWidthPercentage(100);
-
+        // ── Catatan & pengaduan ────────────────────────────────────────────
         Paragraph pNote = new Paragraph();
         pNote.setAlignment(Element.ALIGN_CENTER);
         pNote.setLeading(17f);
@@ -238,6 +275,9 @@ public class TiketService {
         cNote.setPaddingTop(14);
         cNote.setPaddingBottom(18);
         cNote.addElement(pNote);
+
+        PdfPTable tNote = new PdfPTable(1);
+        tNote.setWidthPercentage(100);
         tNote.addCell(cNote);
         cCard.addElement(tNote);
 
@@ -269,29 +309,27 @@ public class TiketService {
     //  HELPERS
     // ════════════════════════════════════════════════════════════════════════
 
-    private PdfPCell makeHeaderCell(BaseFont bf, BaseFont bfBold, String title, String sub, int align) {
-        Paragraph p = new Paragraph();
-        p.setAlignment(align);
-        p.setLeading(15f);
-        p.add(new Chunk(title + "\n", new Font(bfBold, 10, Font.NORMAL, WHITE)));
-        p.add(new Chunk(sub,          new Font(bf,     8,  Font.NORMAL, BLUE_LIGHT_TEXT)));
-        PdfPCell cell = new PdfPCell();
-        cell.setBorder(Rectangle.NO_BORDER);
-        cell.setBackgroundColor(BG_DARK);
-        cell.setHorizontalAlignment(align);
-        cell.setPaddingTop(8);
-        cell.setPaddingBottom(8);
-        cell.setPaddingLeft(align == Element.ALIGN_LEFT ? 4 : 0);
-        cell.setPaddingRight(align == Element.ALIGN_RIGHT ? 4 : 0);
-        cell.addElement(p);
-        return cell;
+    /**
+     * Load logo dari classpath resources.
+     * Taruh file PNG di src/main/resources/ dengan nama yang sama.
+     * Return null jika file tidak ditemukan (fallback ke teks).
+     */
+    private Image loadLogo(String resourcePath) {
+        try {
+            InputStream is = getClass().getResourceAsStream(resourcePath);
+            if (is == null) return null;
+            byte[] bytes = is.readAllBytes();
+            is.close();
+            return Image.getInstance(bytes);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
-    /** Label biru kecil + value bold gelap */
     private Paragraph makeField(BaseFont bf, BaseFont bfBold, String label, String value) {
         Paragraph p = new Paragraph();
         p.setLeading(15f);
-        p.add(new Chunk(label + "\n",           new Font(bf,     9,  Font.NORMAL, BLUE_LABEL)));
+        p.add(new Chunk(label + "\n",                new Font(bf,     9,  Font.NORMAL, BLUE_LABEL)));
         p.add(new Chunk(value != null ? value : "-", new Font(bfBold, 13, Font.NORMAL, SLATE_900)));
         return p;
     }
